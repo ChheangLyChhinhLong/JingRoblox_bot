@@ -2,7 +2,16 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from app.bot import deliver_order, description_preview, menu, payment_keyboard, quantity_limit, safe_user_language, welcome_text
+from app.bot import (
+    deliver_order,
+    description_preview,
+    menu,
+    payment_keyboard,
+    quantity_limit,
+    safe_user_language,
+    upload_product_image,
+    welcome_text,
+)
 from app.security import encrypt_stock
 from app.store import Store
 
@@ -78,10 +87,10 @@ def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
     assert markup.inline_keyboard[1][0].callback_data == "q:order-123"
 
 
-def test_product_image_update_targets_product_and_stores_file_id():
+def test_product_image_update_targets_product_and_stores_cloudinary_url():
     async def run_test():
         product_id = "product-123"
-        file_id = "telegram-photo-file-id"
+        image_url = "https://res.cloudinary.com/example/image/upload/product.png"
         query = Mock()
         query.update.return_value = query
         query.eq.return_value = query
@@ -90,12 +99,40 @@ def test_product_image_update_targets_product_and_stores_file_id():
         query.execute = AsyncMock(return_value=SimpleNamespace(data={"id": product_id}))
         client = SimpleNamespace(table=Mock(return_value=query))
 
-        updated = await Store(client).update_product_image(product_id, file_id)
+        updated = await Store(client).update_product_image(product_id, image_url)
 
         assert updated
         client.table.assert_called_once_with("products")
-        query.update.assert_called_once_with({"image_url": file_id})
+        query.update.assert_called_once_with({"image_url": image_url})
         query.eq.assert_called_once_with("id", product_id)
+
+    asyncio.run(run_test())
+
+
+def test_product_photo_downloads_and_uploads_to_cloudinary(monkeypatch):
+    async def run_test():
+        import app.bot as bot_module
+
+        async def download_photo(file_id, destination):
+            destination.write(b"photo-bytes")
+
+        download = AsyncMock(side_effect=download_photo)
+        telegram_bot = SimpleNamespace(download=download)
+        settings = SimpleNamespace(
+            cloudinary_cloud_name="cloud",
+            cloudinary_api_key="key",
+            cloudinary_api_secret="secret",
+        )
+        uploaded = Mock(return_value={"secure_url": "https://res.cloudinary.com/cloud/image/upload/item.png"})
+        monkeypatch.setattr(bot_module.cloudinary.uploader, "upload", uploaded)
+
+        image_url = await upload_product_image(telegram_bot, settings, "telegram-file-id")
+
+        assert image_url == "https://res.cloudinary.com/cloud/image/upload/item.png"
+        download.assert_awaited_once()
+        assert uploaded.call_args.args[0].getvalue() == b"photo-bytes"
+        assert uploaded.call_args.kwargs["resource_type"] == "image"
+        assert uploaded.call_args.kwargs["cloud_name"] == "cloud"
 
     asyncio.run(run_test())
 

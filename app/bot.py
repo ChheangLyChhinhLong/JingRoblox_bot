@@ -7,9 +7,9 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import qrcode
+import cloudinary.uploader
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
@@ -130,6 +130,27 @@ def payment_qr(payment: dict[str, Any]) -> BufferedInputFile | str:
     return BufferedInputFile(output.getvalue(), filename="payment-qr.png")
 
 
+async def upload_product_image(bot: Bot, settings: Settings, file_id: str) -> str:
+    if not all((settings.cloudinary_cloud_name, settings.cloudinary_api_key, settings.cloudinary_api_secret)):
+        raise RuntimeError("Cloudinary credentials are not configured")
+    image_stream = io.BytesIO()
+    await bot.download(file_id, destination=image_stream)
+    image_stream.seek(0)
+    result = await asyncio.to_thread(
+        cloudinary.uploader.upload,
+        image_stream,
+        cloud_name=settings.cloudinary_cloud_name,
+        api_key=settings.cloudinary_api_key,
+        api_secret=settings.cloudinary_api_secret,
+        resource_type="image",
+        folder="products",
+    )
+    secure_url = result.get("secure_url")
+    if not isinstance(secure_url, str) or not secure_url.startswith("https://"):
+        raise ValueError("Cloudinary did not return a secure HTTPS image URL")
+    return secure_url
+
+
 def menu(settings: Settings, user_id: int, language: str = "km") -> InlineKeyboardMarkup:
     labels = {
         "shop": copy(language, "🛍 ហាងលក់", "🛍 Shop"),
@@ -241,42 +262,6 @@ def register_handlers(
     payments: KHPayClient,
     settings: Settings,
 ) -> None:
-    @router.message(CommandStart())
-    async def start(message: Message) -> None:
-        try:
-            language = await store.user_language(message.from_user.id)
-        except Exception:
-            logger.exception("Could not load language preference for /start")
-            language = "km"
-        if language is None:
-            await message.answer(
-                "🌐 Please select your language / សូមជ្រើសរើសភាសា៖",
-                reply_markup=keyboard(
-                    [
-                        [InlineKeyboardButton(text="🇰🇭 ភាសាខ្មែរ", callback_data="lang:km")],
-                        [InlineKeyboardButton(text="🇺🇸 English", callback_data="lang:en")],
-                    ]
-                ),
-            )
-            return
-        await safe_upsert_user(
-            store,
-            message.from_user.id,
-            message.from_user.username,
-            message.from_user.first_name,
-            language,
-        )
-        try:
-            categories = await store.categories()
-        except Exception:
-            logger.exception("Could not load categories for /start")
-            categories = []
-        await message.answer(
-            welcome_text(message.from_user, language, categories),
-            parse_mode="HTML",
-            reply_markup=menu(settings, message.from_user.id, language),
-        )
-
     @router.callback_query(F.data == "home")
     async def home(callback: CallbackQuery) -> None:
         await callback.answer()
@@ -835,18 +820,18 @@ def register_handlers(
             reply_markup=keyboard(rows),
         )
 
-    @router.message(F.photo, F.caption.startswith("/setphoto"))
+    @router.message(F.photo, F.caption.startswith("setphoto"))
     async def set_product_photo(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admin_ids:
             return
         parts = (message.caption or "").strip().split(maxsplit=1)
-        command = parts[0].split("@", 1)[0] if parts else ""
-        if command != "/setphoto" or len(parts) != 2 or not parts[1].strip():
-            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ ប្រើ /setphoto <product_id> ជាមួយរូបភាព។")
+        if not parts or parts[0] != "setphoto" or len(parts) != 2 or not parts[1].strip():
+            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ សូមប្រើ setphoto <product_id> ជាមួយរូបភាព។")
             return
         product_id = parts[1].strip()
         try:
-            updated = await store.update_product_image(product_id, message.photo[-1].file_id)
+            image_url = await upload_product_image(bot, settings, message.photo[-1].file_id)
+            updated = await store.update_product_image(product_id, image_url)
         except Exception:
             logger.exception("Could not update product image %s", product_id)
             await message.answer("មិនអាចធ្វើបច្ចុប្បន្នភាពរូបភាព Package បានទេ។")
@@ -855,7 +840,7 @@ def register_handlers(
             await message.answer(f"រកមិនឃើញ Package ID {html.escape(product_id)} ទេ។")
             return
         await message.answer(
-            f"✅ រូបភាព Package ID <code>{html.escape(product_id)}</code> ត្រូវបានផ្លាស់ប្តូរជោគជ័យ!",
+            f"✅ បាន Upload រូបភាពទៅ Cloudinary និងបច្ចុប្បន្នភាព Package ID <code>{html.escape(product_id)}</code> ជោគជ័យ!",
             parse_mode="HTML",
         )
 
@@ -962,10 +947,32 @@ def register_handlers(
 
     @router.message(F.text)
     async def receive_admin_input(message: Message) -> None:
-        if not message.from_user or message.from_user.id not in settings.admin_ids:
+        if not message.from_user:
             return
-        pending = pending_admin_input.get(message.from_user.id)
+        pending = (
+            pending_admin_input.get(message.from_user.id)
+            if message.from_user.id in settings.admin_ids
+            else None
+        )
         if not pending:
+            language = await safe_user_language(store, message.from_user.id)
+            await safe_upsert_user(
+                store,
+                message.from_user.id,
+                message.from_user.username,
+                message.from_user.first_name,
+                language,
+            )
+            try:
+                categories = await store.categories()
+            except Exception:
+                logger.exception("Could not load categories for user %s", message.from_user.id)
+                categories = []
+            await message.answer(
+                welcome_text(message.from_user, language, categories),
+                parse_mode="HTML",
+                reply_markup=menu(settings, message.from_user.id, language),
+            )
             return
         action, target_id = pending
         text = (message.text or "").strip()

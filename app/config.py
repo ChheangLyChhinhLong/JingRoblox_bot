@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     telegram_admin_ids: str = ""
     supabase_url: str
     supabase_service_role_key: str
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
     khpay_api_key: str
     khpay_base_url: str = "https://khpay.site/api/v1"
     khpay_webhook_secret: str = ""

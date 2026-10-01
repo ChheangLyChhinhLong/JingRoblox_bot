@@ -6,7 +6,7 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 
 1. Create a Supabase project. Run [`schema.sql`](schema.sql) in its SQL editor. Existing deployments should rerun it to apply additive tables and columns, including tutorial settings and payment-message tracking; the schema uses idempotent statements.
 2. Create a Telegram bot with BotFather and copy its token.
-3. Copy `.env.example` to `.env` and fill in the Telegram, Supabase, and KHPAY settings. Never commit `.env` or expose the Supabase service-role key.
+3. Copy `.env.example` to `.env` and fill in the Telegram, Supabase, Cloudinary, and KHPAY settings. Never commit `.env` or expose the Supabase service-role key.
 4. Generate the stock encryption key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and save it as `STOCK_ENCRYPTION_KEY`. Keep this key backed up: stock credentials cannot be decrypted without it.
 5. Install dependencies with `pip install -r requirements.txt` and start locally with `python -m app.main`.
 6. In Supabase, insert categories and products. Copy a product UUID and import stock using `python -m scripts.import_stock PRODUCT_UUID stock.txt`. Each line in the file must be `username:password`. Set the same environment variables locally before running the importer.
@@ -23,7 +23,7 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 - Customer language (`km` or `en`) and Telegram profile details are stored in the `users` table. The home screen lists active categories from Supabase.
 - Tutorial video URL and caption are fetched from the `bot_settings` table on each tutorial request.
 - Checkout uses KHPAY KHQR directly, with no payment-method selection. The payment screen shows a QR image, an ABA Mobile deep link, and a payment-status button; a confirmed payment automatically removes the QR message before delivering credentials.
-- Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. To set a product image, send a Telegram photo with caption `/setphoto PRODUCT_ID`; the bot stores its Telegram `file_id` in `products.image_url`. Product image URLs or file IDs are fetched from Supabase and used for the customer detail photo.
+- Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. To set a product image, send a Telegram photo with caption `setphoto PRODUCT_ID`; the bot uploads the image to Cloudinary and stores its secure HTTPS URL in `products.image_url`. Product image URLs are fetched from Supabase and used for the customer detail photo.
 - Catalogs and packages can also be managed directly in Supabase. The command-line importer remains available.
 - Checkout uses KHPAY `/qr/generate` in USD. Configure the matching KHPAY product and active payout link in the KHPAY account.
 
