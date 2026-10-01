@@ -71,17 +71,23 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
     if event == "webhook.test":
         return {"received": True, "status": "test"}
 
-    expected_status = {
+    event_status = {
         "payment.paid": "paid",
         "payment.expired": "expired",
         "payment.failed": "failed",
     }.get(event)
-    if not expected_status:
-        return {"received": True, "status": "ignored"}
-
     event_data = payload.get("data")
     if not isinstance(event_data, dict):
         event_data = payload
+    reported_status = event_data.get("status") or payload.get("status")
+    if isinstance(reported_status, str):
+        reported_status = reported_status.lower()
+    expected_status = event_status or (
+        reported_status if reported_status in {"paid", "expired", "failed"} else None
+    )
+    if not expected_status:
+        return {"received": True, "status": "ignored"}
+
     transaction_id = event_data.get("transaction_id") or payload.get("transaction_id")
     if not isinstance(transaction_id, str) or not transaction_id:
         raise HTTPException(status_code=400, detail="Missing transaction_id")
