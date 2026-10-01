@@ -166,17 +166,14 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
 def payment_keyboard(
     order_id: str,
     open_url: str | None,
-    method: str,
     language: str,
 ) -> InlineKeyboardMarkup:
-    provider_label = "ABA Mobile" if method == "qr" else "Bakong"
-    open_label = "🔗 បើក ABA Mobile" if method == "qr" else "🔗 បើក Bakong"
     rows = []
     if open_url:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=copy(language, open_label, f"🔗 Open {provider_label}"),
+                    text=copy(language, "🔗 បើក ABA Mobile", "🔗 Open ABA Mobile"),
                     url=open_url,
                 )
             ]
@@ -550,25 +547,9 @@ def register_handlers(
 
     @router.callback_query(F.data.startswith("b:"))
     async def buy(callback: CallbackQuery) -> None:
-        await callback.answer()
-        _, product_id, quantity_text = callback.data.split(":")
-        language = await safe_user_language(store, callback.from_user.id)
-        rows = [
-            [InlineKeyboardButton(text="🇰🇭 KHQR", callback_data=f"pay:qr:{product_id}:{quantity_text}")],
-            [InlineKeyboardButton(text="🏦 Bakong", callback_data=f"pay:bakong:{product_id}:{quantity_text}")],
-            back_button(f"p:{product_id}", language),
-        ]
-        await edit_text_message(
-            callback.message,
-            copy(language, "ជ្រើសរើសវិធីបង់ប្រាក់៖", "Choose a payment method:"),
-            reply_markup=keyboard(rows),
-        )
-
-    @router.callback_query(F.data.startswith("pay:"))
-    async def create_checkout(callback: CallbackQuery) -> None:
         language = await safe_user_language(store, callback.from_user.id)
         await callback.answer(copy(language, "កំពុងបង្កើតការទូទាត់...", "Creating payment..."))
-        _, method, product_id, quantity_text = callback.data.split(":")
+        _, product_id, quantity_text = callback.data.split(":")
         order = None
         try:
             order = await store.reserve_order(callback.from_user.id, product_id, int(quantity_text))
@@ -576,15 +557,8 @@ def register_handlers(
                 str(order["total"]),
                 str(order["id"]),
                 callback.from_user.id,
-                method,
             )
-            if method == "qr":
-                open_url = aba_mobile_deeplink(payment["qr_string"])
-                provider_label = "ABA Mobile"
-            else:
-                bakong_url = payment.get("bakong_deeplink") or payment.get("deeplink")
-                open_url = bakong_url if isinstance(bakong_url, str) and bakong_url.startswith("bakong://") else None
-                provider_label = "Bakong"
+            open_url = aba_mobile_deeplink(payment["qr_string"])
             await store.set_payment(order["id"], payment["transaction_id"], open_url)
         except Exception:
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
@@ -598,16 +572,16 @@ def register_handlers(
         caption = copy(
             language,
             f"ការបញ្ជាទិញ <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
-            f"ស្កេន QR ឬចុចប៊ូតុង {provider_label} ដើម្បីបង់ប្រាក់។ បន្ទាប់មកចុចពិនិត្យការទូទាត់។",
+            "ស្កេន KHQR ឬចុចប៊ូតុង ABA Mobile ដើម្បីបង់ប្រាក់។ បន្ទាប់មកចុចពិនិត្យការទូទាត់។",
             f"Order <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
-            f"Scan the QR or open {provider_label} to pay, then tap Check payment.",
+            "Scan the KHQR or open ABA Mobile to pay, then tap Check payment.",
         )
         payment_message = await bot.send_photo(
             callback.from_user.id,
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
-            reply_markup=payment_keyboard(str(order["id"]), open_url, method, language),
+            reply_markup=payment_keyboard(str(order["id"]), open_url, language),
         )
         payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
         if payment_status == "paid":
@@ -861,14 +835,14 @@ def register_handlers(
             reply_markup=keyboard(rows),
         )
 
-    @router.message(F.photo, F.caption.startswith("/setproductphoto"))
+    @router.message(F.photo, F.caption.startswith("/setphoto"))
     async def set_product_photo(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admin_ids:
             return
         parts = (message.caption or "").strip().split(maxsplit=1)
         command = parts[0].split("@", 1)[0] if parts else ""
-        if command != "/setproductphoto" or len(parts) != 2 or not parts[1].strip():
-            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ ប្រើ /setproductphoto <product_id> ជាមួយរូបភាព។")
+        if command != "/setphoto" or len(parts) != 2 or not parts[1].strip():
+            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ ប្រើ /setphoto <product_id> ជាមួយរូបភាព។")
             return
         product_id = parts[1].strip()
         try:

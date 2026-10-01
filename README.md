@@ -22,10 +22,10 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 - The bot checks KHPAY on demand and in the background. It delivers credentials only after the authenticated KHPAY status endpoint reports `paid`; it never trusts a browser redirect.
 - Customer language (`km` or `en`) and Telegram profile details are stored in the `users` table. The home screen lists active categories from Supabase.
 - Tutorial video URL and caption are fetched from the `bot_settings` table on each tutorial request.
-- Checkout supports KHPAY KHQR and Bakong generation, shows a QR image and provider link, and lets the owner cancel a pending order after payment status verification.
-- Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. To set a product image, send a Telegram photo with caption `/setproductphoto PRODUCT_ID`; the bot stores its Telegram `file_id` in `products.image_url`. Product image URLs or file IDs are fetched from Supabase and used for the customer detail photo. These workflows do not use admin slash commands; the standard Telegram `/start` entry point remains available.
+- Checkout uses KHPAY KHQR directly, with no payment-method selection. The payment screen shows a QR image, an ABA Mobile deep link, and a payment-status button; a confirmed payment automatically removes the QR message before delivering credentials.
+- Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. To set a product image, send a Telegram photo with caption `/setphoto PRODUCT_ID`; the bot stores its Telegram `file_id` in `products.image_url`. Product image URLs or file IDs are fetched from Supabase and used for the customer detail photo.
 - Catalogs and packages can also be managed directly in Supabase. The command-line importer remains available.
-- Checkout uses KHPAY `/qr/generate` or `/bakong/generate` in USD. Configure the matching KHPAY products and active payout link in the KHPAY account.
+- Checkout uses KHPAY `/qr/generate` in USD. Configure the matching KHPAY product and active payout link in the KHPAY account.
 
 ## Operations and security
 

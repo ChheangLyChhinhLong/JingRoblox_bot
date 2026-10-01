@@ -69,7 +69,6 @@ def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
     markup = payment_keyboard(
         "order-123",
         "abamobilebank://ababank.com?type=payway&qrcode=encoded",
-        "qr",
         "km",
     )
 

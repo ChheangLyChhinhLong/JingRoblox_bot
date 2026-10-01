@@ -34,10 +34,7 @@ class KHPayClient:
         amount: str,
         order_id: str,
         telegram_id: int,
-        method: str = "qr",
     ) -> dict[str, Any]:
-        if method not in {"qr", "bakong"}:
-            raise ValueError("Unsupported KHPAY payment method")
         body: dict[str, Any] = {
             "amount": amount,
             "currency": "USD",
@@ -47,7 +44,7 @@ class KHPayClient:
         if self._webhook_url:
             body["callback_url"] = self._webhook_url
         response = await self._client.post(
-            f"/{method}/generate",
+            "/qr/generate",
             headers={"Idempotency-Key": order_id},
             json=body,
         )
@@ -55,13 +52,10 @@ class KHPayClient:
         if response.is_error or not payload.get("success"):
             raise RuntimeError(payload.get("error", f"KHPAY returned HTTP {response.status_code}"))
         data = payload.get("data", {})
-        payment_url = data.get("payment_url") or data.get("bakong_deeplink") or data.get("deeplink")
         if not data.get("transaction_id"):
             raise RuntimeError("KHPAY response is missing transaction_id")
-        if method == "qr" and (not data.get("qr_string") or not data.get("md5")):
+        if not data.get("qr_string") or not data.get("md5"):
             raise RuntimeError("KHPAY response is missing qr_string or md5")
-        if payment_url:
-            data["payment_url"] = payment_url
         return data
 
     async def check_payment(self, transaction_id: str) -> dict[str, Any]:
