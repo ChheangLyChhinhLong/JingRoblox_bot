@@ -48,14 +48,25 @@ class KHPayClient:
             headers={"Idempotency-Key": order_id},
             json=body,
         )
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            raise RuntimeError(f"KHPAY returned HTTP {response.status_code} with an invalid JSON response") from None
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"KHPAY returned HTTP {response.status_code} with an invalid response")
         if response.is_error or not payload.get("success"):
-            raise RuntimeError(payload.get("error", f"KHPAY returned HTTP {response.status_code}"))
+            error = payload.get("error") or payload.get("message") or f"HTTP {response.status_code}"
+            error_code = payload.get("error_code")
+            request_id = payload.get("request_id")
+            context = ", ".join(value for value in (error_code, f"request_id={request_id}" if request_id else None) if value)
+            raise RuntimeError(f"KHPAY error: {error}" + (f" ({context})" if context else ""))
         data = payload.get("data", {})
+        if not isinstance(data, dict):
+            raise RuntimeError("KHPAY response is missing payment data")
         if not data.get("transaction_id"):
             raise RuntimeError("KHPAY response is missing transaction_id")
-        if not data.get("qr_string") or not data.get("md5"):
-            raise RuntimeError("KHPAY response is missing qr_string or md5")
+        if not data.get("qr_string"):
+            raise RuntimeError("KHPAY response is missing qr_string")
         return data
 
     async def check_payment(self, transaction_id: str) -> dict[str, Any]:

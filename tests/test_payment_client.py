@@ -32,6 +32,28 @@ def test_qr_payment_uses_qr_endpoint():
     asyncio.run(run_test())
 
 
+def test_qr_payment_accepts_documented_response_without_md5():
+    async def run_test():
+        client = KHPayClient("api-key", "https://khpay.site/api/v1")
+        request = httpx.Request("POST", "https://khpay.site/api/v1/qr/generate")
+        response = httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"transaction_id": "txn-789", "qr_string": "KHQR+payload/789"},
+            },
+            request=request,
+        )
+        client._client.post = AsyncMock(return_value=response)
+        try:
+            payment = await client.create_payment("0.30", "order-789", 123)
+            assert payment == {"transaction_id": "txn-789", "qr_string": "KHQR+payload/789"}
+        finally:
+            await client.close()
+
+    asyncio.run(run_test())
+
+
 def test_aba_mobile_deeplink_encodes_raw_qr_string():
     assert aba_mobile_deeplink("KHQR+payload/123=") == (
         "abamobilebank://ababank.com?type=payway&qrcode=KHQR%2Bpayload%2F123%3D"
