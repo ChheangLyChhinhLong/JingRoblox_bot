@@ -7,6 +7,7 @@ from app.bot import (
     admin_product_actions,
     deliver_order,
     description_preview,
+    edit_text_message,
     menu,
     notify_stock_added,
     payment_caption,
@@ -128,6 +129,25 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 
     assert markup.inline_keyboard[2][0].callback_data == "how_to_buy"
     assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
+
+
+def test_edit_text_message_replaces_photo_with_text_message():
+    async def run_test():
+        message = SimpleNamespace(
+            photo=[object()],
+            message_id=456,
+            delete=AsyncMock(),
+            answer=AsyncMock(),
+            edit_text=AsyncMock(),
+        )
+
+        await edit_text_message(message, "Choose a package", parse_mode="HTML")
+
+        message.delete.assert_awaited_once_with()
+        message.answer.assert_awaited_once_with("Choose a package", parse_mode="HTML", reply_markup=None)
+        message.edit_text.assert_not_awaited()
+
+    asyncio.run(run_test())
 
 
 def test_admin_category_actions_group_catalog_controls_after_package_creation():

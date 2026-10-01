@@ -522,14 +522,16 @@ def register_handlers(
         category_id = callback.data[2:]
         category_data = await store.category(category_id)
         if not category_data:
-            await callback.message.edit_text(
+            await edit_text_message(
+                callback.message,
                 copy(language, "ប្រភេទផលិតផលនេះមិនមានទៀតទេ។", "This category is no longer available."),
                 reply_markup=keyboard([back_button("shop", language)]),
             )
             return
         products = await store.products(category_id)
         if not products:
-            await callback.message.edit_text(
+            await edit_text_message(
+                callback.message,
                 f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
                 "───────────────────\n"
                 + copy(language, "ប្រភេទនេះមិនទាន់មាន Package ទេ។", "There are no packages in this category yet."),
@@ -561,7 +563,7 @@ def register_handlers(
             "───────────────────\n"
             f"{intro + chr(10) if intro else ''}Choose a package below:",
         )
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard(rows))
+        await edit_text_message(callback.message, text, parse_mode="HTML", reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("p:"))
     async def product(callback: CallbackQuery) -> None:
