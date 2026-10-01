@@ -7,6 +7,8 @@ from app.bot import (
     description_preview,
     menu,
     payment_keyboard,
+    parse_product_caption,
+    parse_stock_add,
     quantity_limit,
     safe_user_language,
     upload_product_image,
@@ -67,6 +69,31 @@ def test_product_description_is_limited_to_three_lines():
     assert preview.splitlines() == ["First", "Second", "Third", "• ..."]
 
 
+def test_parse_package_photo_caption():
+    assert parse_product_caption("សាកល្បង | 0.01 | ស្ដុកសាកល្បង") == (
+        "សាកល្បង",
+        "0.01",
+        "ស្ដុកសាកល្បង",
+    )
+
+
+def test_parse_stock_add_accepts_comma_and_newline_separated_codes():
+    assert parse_stock_add("addstock product-123 | code1, code2\ncode3") == (
+        "product-123",
+        ["code1", "code2", "code3"],
+    )
+
+
+def test_parse_stock_add_ignores_other_text_and_rejects_missing_credentials():
+    assert parse_stock_add("hello there") is None
+    try:
+        parse_stock_add("addstock product-123 |  ")
+    except ValueError as exc:
+        assert "Code" in str(exc)
+    else:
+        raise AssertionError("Expected empty stock data to be rejected")
+
+
 def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
     markup = menu(SimpleNamespace(admin_ids=set()), 12345, "en")
 
@@ -105,6 +132,36 @@ def test_product_image_update_targets_product_and_stores_cloudinary_url():
         client.table.assert_called_once_with("products")
         query.update.assert_called_once_with({"image_url": image_url})
         query.eq.assert_called_once_with("id", product_id)
+
+    asyncio.run(run_test())
+
+
+def test_product_creation_inserts_category_and_cloudinary_image_url():
+    async def run_test():
+        query = Mock()
+        query.insert.return_value = query
+        query.select.return_value = query
+        query.execute = AsyncMock(return_value=SimpleNamespace(data=[{"id": "product-123"}]))
+        client = SimpleNamespace(table=Mock(return_value=query))
+
+        product_id = await Store(client).create_product(
+            "category-123",
+            "Test package",
+            "0.01",
+            "Description",
+            "https://res.cloudinary.com/example/image/upload/test.png",
+        )
+
+        assert product_id == "product-123"
+        query.insert.assert_called_once_with(
+            {
+                "category_id": "category-123",
+                "name": "Test package",
+                "price": "0.01",
+                "description": "Description",
+                "image_url": "https://res.cloudinary.com/example/image/upload/test.png",
+            }
+        )
 
     asyncio.run(run_test())
 

@@ -87,6 +87,34 @@ class Store:
         )
         return result.data
 
+    async def create_product(
+        self,
+        category_id: str,
+        name: str,
+        price: str,
+        description: str,
+        image_url: str,
+    ) -> str:
+        result = await (
+            self.client.table("products")
+            .insert(
+                {
+                    "category_id": category_id,
+                    "name": name,
+                    "price": price,
+                    "description": description,
+                    "image_url": image_url,
+                }
+            )
+            .select("id")
+            .execute()
+        )
+        data = result.data
+        product = data[0] if isinstance(data, list) and data else data
+        if not isinstance(product, dict) or not product.get("id"):
+            raise RuntimeError("Supabase did not return the new product ID")
+        return str(product["id"])
+
     async def update_product_image(self, product_id: str, image_url: str) -> bool:
         result = await (
             self.client.table("products")

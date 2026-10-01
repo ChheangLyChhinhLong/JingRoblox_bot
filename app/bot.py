@@ -90,6 +90,32 @@ def quantity_limit(stock: int) -> int:
     return max(0, min(3, stock))
 
 
+def parse_product_caption(caption: str) -> tuple[str, str, str]:
+    fields = [field.strip() for field in caption.split("|", 2)]
+    if len(fields) != 3 or not fields[0] or not fields[1]:
+        raise ValueError("សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។")
+    try:
+        price = Decimal(fields[1])
+    except InvalidOperation:
+        raise ValueError("តម្លៃមិនត្រឹមត្រូវទេ។") from None
+    if not price.is_finite() or price <= 0:
+        raise ValueError("តម្លៃត្រូវតែធំជាង 0។")
+    return fields[0], str(price), fields[2]
+
+
+def parse_stock_add(text: str) -> tuple[str, list[str]] | None:
+    header, separator, stock_text = text.partition("|")
+    parts = header.strip().split()
+    if not parts or parts[0].lower() != "addstock":
+        return None
+    if len(parts) != 2 or not separator:
+        raise ValueError("សូមប្រើទម្រង់ addstock <product_id> | code1, code2។")
+    credentials = [item.strip() for item in stock_text.replace("\n", ",").split(",") if item.strip()]
+    if not credentials:
+        raise ValueError("សូមបញ្ចូល Code យ៉ាងហោចណាស់មួយ។")
+    return parts[1], credentials
+
+
 def description_preview(description: str, language: str = "km") -> str:
     lines = [line.strip() for line in description.splitlines() if line.strip()]
     if not lines:
@@ -844,6 +870,32 @@ def register_handlers(
             parse_mode="HTML",
         )
 
+    @router.message(F.photo, F.caption.contains("|"))
+    async def create_product_with_photo(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in settings.admin_ids:
+            return
+        pending = pending_admin_input.get(message.from_user.id)
+        if not pending or pending[0] != "product_add" or not pending[1]:
+            await message.answer("សូមជ្រើសរើស Catalog និង Package ថ្មីក្នុងម៉ឺនុយគ្រប់គ្រងជាមុនសិន។")
+            return
+        try:
+            name, price, description = parse_product_caption(message.caption or "")
+            image_url = await upload_product_image(bot, settings, message.photo[-1].file_id)
+            product_id = await store.create_product(pending[1], name, price, description, image_url)
+        except (InvalidOperation, ValueError) as exc:
+            await message.answer(html.escape(str(exc)))
+            return
+        except Exception:
+            logger.exception("Could not create package with photo for admin %s", message.from_user.id)
+            await message.answer("មិនអាចបង្កើត Package បានទេ។ សូមពិនិត្យ Cloudinary និង Supabase រួចព្យាយាមម្ដងទៀត។")
+            return
+        pending_admin_input.pop(message.from_user.id, None)
+        await message.answer(
+            f'✅ បានបង្កើត Package "{html.escape(name)}" និង Upload រូបភាពទៅ Cloudinary រួចរាល់! '
+            f"(ID: <code>{html.escape(product_id)}</code>)",
+            parse_mode="HTML",
+        )
+
     @router.callback_query(F.data.startswith("admin:product-add:"))
     async def add_product_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
@@ -852,7 +904,7 @@ def register_handlers(
         category_id = callback.data.removeprefix("admin:product-add:")
         pending_admin_input[callback.from_user.id] = ("product_add", category_id)
         await callback.message.edit_text(
-            "ផ្ញើព័ត៌មាន Package តាមទម្រង់៖ <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code>",
+            "ផ្ញើរូបភាពជាមួយ Caption <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code> ឬផ្ញើតែអត្ថបទក្នុងទម្រង់ដដែល។",
             parse_mode="HTML",
             reply_markup=keyboard([back_button("admin:cancel-input")]),
         )
@@ -949,6 +1001,22 @@ def register_handlers(
     async def receive_admin_input(message: Message) -> None:
         if not message.from_user:
             return
+        text = (message.text or "").strip()
+        if message.from_user.id in settings.admin_ids:
+            try:
+                stock_add = parse_stock_add(text)
+                if stock_add:
+                    product_id, credentials = stock_add
+                    added = await store.import_stock(product_id, credentials, settings.stock_encryption_key)
+                    await message.answer(f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។")
+                    return
+            except ValueError as exc:
+                await message.answer(html.escape(str(exc)))
+                return
+            except Exception:
+                logger.exception("Direct stock import failed for admin %s", message.from_user.id)
+                await message.answer("មិនអាចបញ្ចូលស្តុកបានទេ។ សូមពិនិត្យ Product ID រួចព្យាយាមម្ដងទៀត។")
+                return
         pending = (
             pending_admin_input.get(message.from_user.id)
             if message.from_user.id in settings.admin_ids
@@ -975,7 +1043,6 @@ def register_handlers(
             )
             return
         action, target_id = pending
-        text = (message.text or "").strip()
         try:
             if action in {"category_add", "category_edit"}:
                 name, separator, description = text.partition("|")
