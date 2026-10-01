@@ -23,6 +23,7 @@ router = Router()
 pending_stock_upload: dict[int, str] = {}
 pending_admin_input: dict[int, tuple[str, str | None]] = {}
 welcome_message_ids: dict[int, int] = {}
+payment_message_ids: dict[str, tuple[int, int]] = {}
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
@@ -65,7 +66,7 @@ def payment_caption(product_name: str, quantity: int, amount: Any, transaction_r
         f"🟢 <b>{copy(language, 'នៅសល់ត្រូវបង់៖', 'Remaining to pay:')}</b> ${total}\n"
         f"🏷 <b>{copy(language, 'លេខយោង៖', 'Ref:')}</b> <code>{html.escape(transaction_ref)}</code>\n"
         f"⏱ <b>{copy(language, 'ស្កេន KHQR ដើម្បីបញ្ចប់ការទូទាត់។', 'Scan KHQR to complete payment.')}</b>\n"
-        f"⏰ <b>{copy(language, 'អ្នកមានពេល 15 នាទីដើម្បីទូទាត់។ QR code នឹងផុតកំណត់ដោយស្វ័យប្រវត្តិ។', 'You have 15 minutes to pay. The QR refreshes itself.')}</b>"
+        f"⏰ <b>{copy(language, 'អ្នកមានពេល 4 នាទីដើម្បីទូទាត់។ QR code នឹងផុតកំណត់ដោយស្វ័យប្រវត្តិ។', 'You have 4 minutes to pay. The QR refreshes itself.')}</b>"
     )
 
 
@@ -391,18 +392,32 @@ async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: st
 
 
 async def delete_payment_message(bot: Bot, store: Store, order_id: str) -> None:
-    payment_message = await store.payment_message(order_id)
-    if not payment_message or not payment_message.get("message_id"):
+    payment_message = None
+    try:
+        payment_message = await store.payment_message(order_id)
+    except Exception:
+        logger.exception("Could not load payment message for order %s", order_id)
+    if payment_message and payment_message.get("message_id"):
+        chat_id = int(payment_message["chat_id"])
+        message_id = int(payment_message["message_id"])
+    elif order_id in payment_message_ids:
+        chat_id, message_id = payment_message_ids[order_id]
+    else:
+        logger.warning("No QR message ID is available for order %s", order_id)
         return
     try:
         await bot.delete_message(
-            chat_id=int(payment_message["chat_id"]),
-            message_id=int(payment_message["message_id"]),
+            chat_id=chat_id,
+            message_id=message_id,
         )
     except TelegramBadRequest as exc:
         if "message to delete not found" not in str(exc).lower():
             raise
-    await store.clear_payment_message(order_id)
+    payment_message_ids.pop(order_id, None)
+    try:
+        await store.clear_payment_message(order_id)
+    except Exception:
+        logger.exception("Could not clear payment message ID for order %s", order_id)
 
 
 async def expire_payment(
@@ -425,9 +440,20 @@ async def expire_payment(
     await store.release_order(order_id, status)
 
 
-async def track_payment_message(bot: Bot, store: Store, order_id: str, message_id: int) -> None:
-    payment_status = await store.set_payment_message(order_id, message_id)
-    if payment_status != "pending":
+async def track_payment_message(
+    bot: Bot,
+    store: Store,
+    order_id: str,
+    chat_id: int,
+    message_id: int,
+) -> None:
+    payment_message_ids[order_id] = (chat_id, message_id)
+    try:
+        payment_status = await store.set_payment_message(order_id, message_id)
+    except Exception:
+        logger.exception("Could not save payment message ID for order %s", order_id)
+        return
+    if payment_status and payment_status != "pending":
         await delete_payment_message(bot, store, order_id)
 
 
@@ -765,7 +791,7 @@ def register_handlers(
             reply_markup=payment_keyboard(str(order["id"]), open_url, language),
         )
         await delete_replaced_message(callback.message)
-        await track_payment_message(bot, store, order["id"], payment_message.message_id)
+        await track_payment_message(bot, store, order["id"], callback.from_user.id, payment_message.message_id)
 
     @router.callback_query(F.data.startswith("cancel:"))
     async def cancel_order(callback: CallbackQuery) -> None:

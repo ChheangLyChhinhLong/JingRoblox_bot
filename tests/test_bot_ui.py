@@ -260,7 +260,7 @@ def test_payment_caption_matches_requested_html_layout_and_escapes_data():
         "🟢 <b>Remaining to pay:</b> $10.50\n"
         "🏷 <b>Ref:</b> <code>txn-123</code>\n"
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
-        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+        "⏰ <b>You have 4 minutes to pay. The QR refreshes itself.</b>"
     )
 
 
@@ -283,7 +283,7 @@ def test_terminal_payment_status_deletes_qr_after_message_is_saved():
                 clear_payment_message=AsyncMock(),
             )
 
-            await track_payment_message(bot, store, "order-123", 456)
+            await track_payment_message(bot, store, "order-123", 123, 456)
 
             bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
             store.clear_payment_message.assert_awaited_once_with("order-123")
@@ -561,5 +561,26 @@ def test_stock_notification_users_are_loaded_in_pages():
 
         assert len(users) == 1001
         assert [call.args for call in query.range.call_args_list] == [(0, 999), (1000, 1999)]
+
+    asyncio.run(run_test())
+
+
+def test_expiration_deletes_cached_qr_when_message_id_persistence_fails():
+    async def run_test():
+        bot = SimpleNamespace(delete_message=AsyncMock(), send_message=AsyncMock())
+        store = SimpleNamespace(
+            set_payment_message=AsyncMock(side_effect=RuntimeError("database unavailable")),
+            payment_message=AsyncMock(return_value=None),
+            clear_payment_message=AsyncMock(),
+            release_order=AsyncMock(),
+            user_language=AsyncMock(return_value="km"),
+        )
+
+        await track_payment_message(bot, store, "order-cache-fallback", 123, 456)
+        await expire_payment(bot, store, "order-cache-fallback", 123, "expired")
+
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+        bot.send_message.assert_awaited_once()
+        store.release_order.assert_awaited_once_with("order-cache-fallback", "expired")
 
     asyncio.run(run_test())
