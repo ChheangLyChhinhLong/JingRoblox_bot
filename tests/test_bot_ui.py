@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app.bot import description_preview, quantity_limit, safe_user_language, welcome_text
+from app.bot import description_preview, menu, quantity_limit, safe_user_language, welcome_text
 
 
 def test_welcome_text_escapes_profile_data_and_handles_missing_username():
@@ -53,7 +53,14 @@ def test_quantity_limit_matches_available_stock_and_order_cap():
 def test_product_description_is_limited_to_three_lines():
     preview = description_preview("First\nSecond\nThird\nFourth", "en")
 
-    assert preview.splitlines() == ["First", "Second", "• ..."]
+    assert preview.splitlines() == ["First", "Second", "Third", "• ..."]
+
+
+def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
+    markup = menu(SimpleNamespace(admin_ids=set()), 12345, "en")
+
+    assert markup.inline_keyboard[2][0].callback_data == "how_to_buy"
+    assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
 
 
 def test_user_language_falls_back_to_khmer_when_preferences_are_unavailable():

@@ -35,6 +35,15 @@ class Store:
             raise ValueError("Unsupported language")
         await self.client.table("users").update({"language": language}).eq("telegram_id", telegram_id).execute()
 
+    async def bot_settings(self, keys: tuple[str, ...]) -> dict[str, str]:
+        result = await (
+            self.client.table("bot_settings")
+            .select("key,value")
+            .in_("key", list(keys))
+            .execute()
+        )
+        return {item["key"]: item["value"] for item in result.data or []}
+
     async def categories(self) -> list[dict[str, Any]]:
         result = await (
             self.client.table("categories")

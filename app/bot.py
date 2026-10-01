@@ -77,7 +77,7 @@ def description_preview(description: str, language: str = "km") -> str:
     if not lines:
         return copy(language, "មិនមានព័ត៌មានបន្ថែម។", "No additional details.")
     if len(lines) > 3:
-        lines = [*lines[:2], "• ..."]
+        lines = [*lines[:3], "• ..."]
     return html.escape("\n".join(lines))
 
 
@@ -109,16 +109,18 @@ def menu(settings: Settings, user_id: int, language: str = "km") -> InlineKeyboa
     labels = {
         "shop": copy(language, "🛍 ហាងលក់", "🛍 Shop"),
         "orders": copy(language, "🛒 ការបញ្ជាទិញ", "🛒 My orders"),
-        "guide": copy(language, "💎 របៀបទិញ & Redeem Code", "💎 How to buy & redeem"),
+        "guide": copy(language, "🎥 របៀបទិញ", "🎥 How to buy"),
         "language": copy(language, "🌐 ភាសា", "🌐 Language"),
         "support": copy(language, "💬 ជំនួយ", "💬 Support"),
     }
     rows = [
         [InlineKeyboardButton(text=labels["shop"], callback_data="shop")],
         [InlineKeyboardButton(text=labels["orders"], callback_data="history")],
-        [InlineKeyboardButton(text=labels["guide"], callback_data="guide")],
-        [InlineKeyboardButton(text=labels["language"], callback_data="language")],
-        [InlineKeyboardButton(text=labels["support"], callback_data="support")],
+        [InlineKeyboardButton(text=labels["guide"], callback_data="how_to_buy")],
+        [
+            InlineKeyboardButton(text=labels["language"], callback_data="language"),
+            InlineKeyboardButton(text=labels["support"], callback_data="support"),
+        ],
     ]
     if user_id in settings.admin_ids:
         rows.append(
@@ -259,31 +261,34 @@ def register_handlers(
             reply_markup=menu(settings, callback.from_user.id, language),
         )
 
-    @router.callback_query(F.data == "guide")
+    @router.callback_query(F.data.in_({"how_to_buy", "guide"}))
     async def buying_guide(callback: CallbackQuery) -> None:
         await callback.answer()
         language = await safe_user_language(store, callback.from_user.id)
-        redeem_button = InlineKeyboardButton(
-            text=copy(language, "🌐 បើក Roblox Redeem", "🌐 Open Roblox Redeem"),
-            url="https://www.roblox.com/redeem",
+        back_to_menu = keyboard(
+            [[InlineKeyboardButton(text=copy(language, "⬅️ ត្រឡប់ទៅម៉ឺនុយ", "⬅️ Back to menu"), callback_data="home")]]
         )
-        rows = [[redeem_button], back_button(language=language)]
-        await callback.message.edit_text(
-            copy(
-                language,
-                "💎 <b>របៀបទិញ និង Redeem Code</b>\n"
-                "1. ជ្រើសរើស Catalog និង Package។\n"
-                "2. ជ្រើសចំនួន រួចជ្រើស KHQR ឬ Bakong ដើម្បីបង់ប្រាក់។\n"
-                "3. បន្ទាប់ពីបង់ប្រាក់បានបញ្ជាក់ Bot នឹងផ្ញើ Code ឬព័ត៌មានចូលគណនី។\n"
-                "4. សម្រាប់ Roblox Gift Card សូមបញ្ចូល Code នៅទំព័រ Roblox Redeem។",
-                "💎 <b>How to buy and redeem</b>\n"
-                "1. Choose a catalog and package.\n"
-                "2. Select quantity, then choose KHQR or Bakong to pay.\n"
-                "3. After payment is confirmed, the bot sends your code or account details.\n"
-                "4. Redeem Roblox gift card codes on the official Roblox page.",
-            ),
-            parse_mode="HTML",
-            reply_markup=keyboard(rows),
+        try:
+            settings_data = await store.bot_settings(("how_to_buy_video_url", "how_to_buy_caption"))
+        except Exception:
+            logger.exception("Could not load tutorial settings")
+            await callback.message.answer(
+                copy(language, "មិនអាចទាញយកវីដេអូណែនាំបានទេ។", "Could not load the tutorial video."),
+                reply_markup=back_to_menu,
+            )
+            return
+        video = settings_data.get("how_to_buy_video_url")
+        if not video:
+            await callback.message.answer(
+                copy(language, "មិនទាន់មានវីដេអូណែនាំទេ។", "The tutorial video is not configured yet."),
+                reply_markup=back_to_menu,
+            )
+            return
+        caption = settings_data.get("how_to_buy_caption", "").strip()[:1024]
+        await callback.message.answer_video(
+            video=video,
+            caption=caption or None,
+            reply_markup=back_to_menu,
         )
 
     @router.callback_query(F.data == "shop")
