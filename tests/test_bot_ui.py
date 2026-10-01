@@ -12,6 +12,8 @@ from app.bot import (
     expire_payment,
     menu,
     notify_stock_added,
+    paginate,
+    pagination_row,
     payment_caption,
     payment_keyboard,
     parse_product_caption,
@@ -136,6 +138,27 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 
     assert markup.inline_keyboard[2][0].callback_data == "how_to_buy"
     assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
+
+
+def test_catalog_pagination_limits_items_and_clamps_page():
+    items = list(range(18))
+
+    first_page, page, page_count = paginate(items, 0)
+    last_page, last_page_number, last_page_count = paginate(items, 99)
+
+    assert first_page == list(range(8))
+    assert (page, page_count) == (0, 3)
+    assert last_page == [16, 17]
+    assert (last_page_number, last_page_count) == (2, 3)
+
+
+def test_catalog_pagination_navigation_has_one_row_and_hides_unavailable_directions():
+    first_page = pagination_row(0, 3, "shop:catalogs", "en")
+    last_page = pagination_row(2, 3, "shop:catalogs", "en")
+
+    assert [button.callback_data for button in first_page] == ["noop", "shop:catalogs:1"]
+    assert [button.callback_data for button in last_page] == ["shop:catalogs:1", "noop"]
+    assert pagination_row(0, 1, "shop:catalogs", "en") == []
 
 
 def test_edit_text_message_replaces_photo_with_text_message():
@@ -270,7 +293,7 @@ def test_payment_caption_supports_khmer():
     assert "ទូទាត់ $5.00" in caption
     assert "ផលិតផល៖" in caption
     assert "ស្កេន KHQR ដើម្បីបញ្ចប់ការទូទាត់។" in caption
-    assert "អ្នកមានពេល 15 នាទី" in caption
+    assert "អ្នកមានពេល 4 នាទី" in caption
 
 
 def test_terminal_payment_status_deletes_qr_after_message_is_saved():

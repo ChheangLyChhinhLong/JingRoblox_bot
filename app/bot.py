@@ -24,10 +24,40 @@ pending_stock_upload: dict[int, str] = {}
 pending_admin_input: dict[int, tuple[str, str | None]] = {}
 welcome_message_ids: dict[int, int] = {}
 payment_message_ids: dict[str, tuple[int, int]] = {}
+CATALOG_PAGE_SIZE = 8
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def paginate(items: list[Any], page: int) -> tuple[list[Any], int, int]:
+    page_count = max(1, (len(items) + CATALOG_PAGE_SIZE - 1) // CATALOG_PAGE_SIZE)
+    page = max(0, min(page, page_count - 1))
+    start = page * CATALOG_PAGE_SIZE
+    return items[start : start + CATALOG_PAGE_SIZE], page, page_count
+
+
+def pagination_row(page: int, page_count: int, callback_prefix: str, language: str) -> list[InlineKeyboardButton]:
+    if page_count <= 1:
+        return []
+    row = []
+    if page > 0:
+        row.append(
+            InlineKeyboardButton(
+                text=copy(language, "⬅️ មុន", "⬅️ Previous"),
+                callback_data=f"{callback_prefix}:{page - 1}",
+            )
+        )
+    row.append(InlineKeyboardButton(text=f"{page + 1} / {page_count}", callback_data="noop"))
+    if page < page_count - 1:
+        row.append(
+            InlineKeyboardButton(
+                text=copy(language, "បន្ទាប់ ➡️", "Next ➡️"),
+                callback_data=f"{callback_prefix}:{page + 1}",
+            )
+        )
+    return row
 
 
 async def edit_text_message(
@@ -464,6 +494,89 @@ def register_handlers(
     payments: KHPayClient,
     settings: Settings,
 ) -> None:
+    async def show_catalogs(message: Message, page: int, language: str) -> None:
+        categories = await store.categories()
+        if not categories:
+            await edit_text_message(
+                message,
+                copy(
+                    language,
+                    "បច្ចុប្បន្នមិនមានប្រភេទទំនិញទេ។ សូមពិនិត្យម្ដងទៀតពេលក្រោយ។",
+                    "There are no product categories yet. Please check back later.",
+                ),
+                reply_markup=keyboard([back_button(language=language)]),
+            )
+            return
+        visible_categories, page, page_count = paginate(categories, page)
+        rows = [
+            [InlineKeyboardButton(text=f"🛍 {item['name']}", callback_data=f"c:{item['id']}")]
+            for item in visible_categories
+        ]
+        navigation = pagination_row(page, page_count, "shop:catalogs", language)
+        if navigation:
+            rows.append(navigation)
+        rows.append(back_button(language=language))
+        text = copy(
+            language,
+            "🛍 <b>សូមជ្រើសរើសប្រភេទផលិតផល</b>\n"
+            "───────────────────\n"
+            "សូមជ្រើសរើស Catalog ណាមួយខាងក្រោមដើម្បីមើល Package ទំនិញ៖",
+            "🛍 <b>Choose a product category</b>\n"
+            "───────────────────\n"
+            "Choose a catalog below to browse its packages:",
+        )
+        await edit_text_message(message, text, parse_mode="HTML", reply_markup=keyboard(rows))
+
+    async def show_packages(message: Message, category_id: str, page: int, language: str) -> None:
+        category_data = await store.category(category_id)
+        if not category_data:
+            await edit_text_message(
+                message,
+                copy(language, "ប្រភេទផលិតផលនេះមិនមានទៀតទេ។", "This category is no longer available."),
+                reply_markup=keyboard([back_button("shop", language)]),
+            )
+            return
+        products = await store.products(category_id)
+        if not products:
+            await edit_text_message(
+                message,
+                f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
+                "───────────────────\n"
+                + copy(language, "ប្រភេទនេះមិនទាន់មាន Package ទេ។", "There are no packages in this category yet."),
+                parse_mode="HTML",
+                reply_markup=keyboard([back_button("shop", language)]),
+            )
+            return
+        visible_products, page, page_count = paginate(products, page)
+        stock_counts = await asyncio.gather(*(store.available_stock(item["id"]) for item in visible_products))
+        rows = []
+        for item, stock in zip(visible_products, stock_counts):
+            stock_label = str(stock) if stock else copy(language, "អស់ស្តុក", "Out")
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"📦 {item['name']} • {money(item['price'])} ({stock_label})",
+                        callback_data=f"p:{item['id']}",
+                    )
+                ]
+            )
+        navigation = pagination_row(page, page_count, f"shop:packages:{category_id}", language)
+        if navigation:
+            rows.append(navigation)
+        rows.append(back_button("shop", language))
+        description = (category_data.get("description") or "").strip()
+        intro = html.escape(description) if description else ""
+        text = copy(
+            language,
+            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
+            "───────────────────\n"
+            f"{intro + chr(10) if intro else ''}សូមជ្រើសរើស Package ខាងក្រោម៖",
+            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
+            "───────────────────\n"
+            f"{intro + chr(10) if intro else ''}Choose a package below:",
+        )
+        await edit_text_message(message, text, parse_mode="HTML", reply_markup=keyboard(rows))
+
     @router.message(CommandStart())
     async def start(message: Message) -> None:
         await send_welcome(message, store, settings)
@@ -562,87 +675,27 @@ def register_handlers(
     async def shop(callback: CallbackQuery) -> None:
         await callback.answer()
         language = await safe_user_language(store, callback.from_user.id)
-        categories = await store.categories()
-        if not categories:
-            await callback.message.edit_text(
-                copy(
-                    language,
-                    "បច្ចុប្បន្នមិនមានប្រភេទទំនិញទេ។ សូមពិនិត្យម្ដងទៀតពេលក្រោយ។",
-                    "There are no product categories yet. Please check back later.",
-                ),
-                reply_markup=keyboard([back_button(language=language)]),
-            )
-            return
-        rows = [
-            [
-                InlineKeyboardButton(
-                    text=f"🛍 {item['name']}",
-                    callback_data=f"c:{item['id']}",
-                )
-            ]
-            for item in categories
-        ]
-        rows.append(back_button(language=language))
-        text = copy(
-            language,
-            "🛍 <b>សូមជ្រើសរើសប្រភេទផលិតផល</b>\n"
-            "───────────────────\n"
-            "សូមជ្រើសរើស Catalog ណាមួយខាងក្រោមដើម្បីមើល Package ទំនិញ៖",
-            "🛍 <b>Choose a product category</b>\n"
-            "───────────────────\n"
-            "Choose a catalog below to browse its packages:",
-        )
-        await edit_text_message(callback.message, text, parse_mode="HTML", reply_markup=keyboard(rows))
+        await show_catalogs(callback.message, 0, language)
+
+    @router.callback_query(F.data.startswith("shop:catalogs:"))
+    async def shop_catalog_page(callback: CallbackQuery) -> None:
+        await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
+        await show_catalogs(callback.message, int(callback.data.rsplit(":", 1)[1]), language)
+
+    @router.callback_query(F.data.startswith("shop:packages:"))
+    async def shop_package_page(callback: CallbackQuery) -> None:
+        await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
+        category_id, page = callback.data[len("shop:packages:") :].rsplit(":", 1)
+        await show_packages(callback.message, category_id, int(page), language)
 
     @router.callback_query(F.data.startswith("c:"))
     async def category(callback: CallbackQuery) -> None:
         await callback.answer()
         language = await safe_user_language(store, callback.from_user.id)
         category_id = callback.data[2:]
-        category_data = await store.category(category_id)
-        if not category_data:
-            await edit_text_message(
-                callback.message,
-                copy(language, "ប្រភេទផលិតផលនេះមិនមានទៀតទេ។", "This category is no longer available."),
-                reply_markup=keyboard([back_button("shop", language)]),
-            )
-            return
-        products = await store.products(category_id)
-        if not products:
-            await edit_text_message(
-                callback.message,
-                f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
-                "───────────────────\n"
-                + copy(language, "ប្រភេទនេះមិនទាន់មាន Package ទេ។", "There are no packages in this category yet."),
-                parse_mode="HTML",
-                reply_markup=keyboard([back_button("shop", language)]),
-            )
-            return
-        stock_counts = await asyncio.gather(*(store.available_stock(item["id"]) for item in products))
-        rows = []
-        for item, stock in zip(products, stock_counts):
-            stock_label = str(stock) if stock else copy(language, "អស់ស្តុក", "Out")
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"📦 {item['name']} • {money(item['price'])} ({stock_label})",
-                        callback_data=f"p:{item['id']}",
-                    )
-                ]
-            )
-        rows.append(back_button("shop", language))
-        description = (category_data.get("description") or "").strip()
-        intro = html.escape(description) if description else ""
-        text = copy(
-            language,
-            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
-            "───────────────────\n"
-            f"{intro + chr(10) if intro else ''}សូមជ្រើសរើស Package ខាងក្រោម៖",
-            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
-            "───────────────────\n"
-            f"{intro + chr(10) if intro else ''}Choose a package below:",
-        )
-        await edit_text_message(callback.message, text, parse_mode="HTML", reply_markup=keyboard(rows))
+        await show_packages(callback.message, category_id, 0, language)
 
     @router.callback_query(F.data.startswith("p:"))
     async def product(callback: CallbackQuery) -> None:
