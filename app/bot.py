@@ -10,6 +10,7 @@ import qrcode
 import cloudinary.uploader
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
@@ -278,6 +279,24 @@ async def safe_upsert_user(store: Store, telegram_id: int, username: str | None,
         logger.exception("Could not save profile for Telegram user %s", telegram_id)
 
 
+async def send_welcome(message: Message, store: Store, settings: Settings) -> None:
+    user = message.from_user
+    if not user:
+        return
+    language = await safe_user_language(store, user.id)
+    await safe_upsert_user(store, user.id, user.username, user.first_name, language)
+    try:
+        categories = await store.categories()
+    except Exception:
+        logger.exception("Could not load categories for user %s", user.id)
+        categories = []
+    await message.answer(
+        welcome_text(user, language, categories),
+        parse_mode="HTML",
+        reply_markup=menu(settings, user.id, language),
+    )
+
+
 async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: str, chat_id: int) -> None:
     await delete_payment_message(bot, store, order_id)
     credentials = await store.fulfill_order(order_id)
@@ -315,6 +334,10 @@ def register_handlers(
     payments: KHPayClient,
     settings: Settings,
 ) -> None:
+    @router.message(CommandStart())
+    async def start(message: Message) -> None:
+        await send_welcome(message, store, settings)
+
     @router.callback_query(F.data == "home")
     async def home(callback: CallbackQuery) -> None:
         await callback.answer()
@@ -1075,24 +1098,7 @@ def register_handlers(
             else None
         )
         if not pending:
-            language = await safe_user_language(store, message.from_user.id)
-            await safe_upsert_user(
-                store,
-                message.from_user.id,
-                message.from_user.username,
-                message.from_user.first_name,
-                language,
-            )
-            try:
-                categories = await store.categories()
-            except Exception:
-                logger.exception("Could not load categories for user %s", message.from_user.id)
-                categories = []
-            await message.answer(
-                welcome_text(message.from_user, language, categories),
-                parse_mode="HTML",
-                reply_markup=menu(settings, message.from_user.id, language),
-            )
+            await send_welcome(message, store, settings)
             return
         action, target_id = pending
         try:

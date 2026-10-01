@@ -14,6 +14,7 @@ from app.bot import (
     parse_stock_add,
     quantity_limit,
     safe_user_language,
+    send_welcome,
     upload_product_image,
     welcome_text,
 )
@@ -40,6 +41,29 @@ def test_english_welcome_shows_account_details():
     assert "Welcome, Jing" in text
     assert "<code>12345</code>" in text
     assert "@jing" in text
+
+
+def test_start_welcome_sends_menu_and_saves_profile():
+    async def run_test():
+        user = SimpleNamespace(id=12345, first_name="Jing", username="jing")
+        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+        store = SimpleNamespace(
+            user_language=AsyncMock(return_value="km"),
+            upsert_user=AsyncMock(),
+            categories=AsyncMock(return_value=[{"name": "Catalog", "description": ""}]),
+        )
+        settings = SimpleNamespace(admin_ids=set())
+
+        await send_welcome(message, store, settings)
+
+        store.upsert_user.assert_awaited_once_with(12345, "jing", "Jing", "km")
+        message.answer.assert_awaited_once()
+        sent_text = message.answer.call_args.args[0]
+        sent_markup = message.answer.call_args.kwargs["reply_markup"]
+        assert "សូមស្វាគមន៍ Jing" in sent_text
+        assert sent_markup.inline_keyboard[0][0].callback_data == "shop"
+
+    asyncio.run(run_test())
 
 
 def test_welcome_lists_database_categories():
