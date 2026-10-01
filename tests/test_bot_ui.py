@@ -17,6 +17,7 @@ from app.bot import (
     quantity_limit,
     safe_user_language,
     send_welcome,
+    track_payment_message,
     upload_product_image,
     welcome_text,
 )
@@ -194,6 +195,24 @@ def test_payment_caption_matches_requested_html_layout_and_escapes_data():
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
         "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
     )
+
+
+def test_terminal_payment_status_deletes_qr_after_message_is_saved():
+    async def run_test():
+        for status in ("paid", "expired", "failed", "cancelled"):
+            bot = SimpleNamespace(delete_message=AsyncMock())
+            store = SimpleNamespace(
+                set_payment_message=AsyncMock(return_value=status),
+                payment_message=AsyncMock(return_value={"chat_id": 123, "message_id": 456}),
+                clear_payment_message=AsyncMock(),
+            )
+
+            await track_payment_message(bot, store, "order-123", 456)
+
+            bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+            store.clear_payment_message.assert_awaited_once_with("order-123")
+
+    asyncio.run(run_test())
 
 
 def test_product_image_update_targets_product_and_stores_cloudinary_url():

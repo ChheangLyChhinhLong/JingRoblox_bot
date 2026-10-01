@@ -387,6 +387,12 @@ async def delete_payment_message(bot: Bot, store: Store, order_id: str) -> None:
     await store.clear_payment_message(order_id)
 
 
+async def track_payment_message(bot: Bot, store: Store, order_id: str, message_id: int) -> None:
+    payment_status = await store.set_payment_message(order_id, message_id)
+    if payment_status != "pending":
+        await delete_payment_message(bot, store, order_id)
+
+
 def register_handlers(
     dispatcher: Dispatcher,
     bot: Bot,
@@ -709,9 +715,7 @@ def register_handlers(
             parse_mode="HTML",
             reply_markup=payment_keyboard(str(order["id"]), open_url),
         )
-        payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
-        if payment_status == "paid":
-            await delete_payment_message(bot, store, order["id"])
+        await track_payment_message(bot, store, order["id"], payment_message.message_id)
 
     @router.callback_query(F.data.startswith("cancel:"))
     async def cancel_order(callback: CallbackQuery) -> None:
