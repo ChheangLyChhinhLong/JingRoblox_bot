@@ -138,7 +138,7 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
 
 async def safe_user_language(store: Store, telegram_id: int) -> str:
     try:
-        return await store.user_language(telegram_id)
+        return await store.user_language(telegram_id) or "km"
     except Exception:
         logger.exception("Could not load language preference for Telegram user %s", telegram_id)
         return "km"
@@ -174,12 +174,22 @@ def register_handlers(
 ) -> None:
     @router.message(CommandStart())
     async def start(message: Message) -> None:
-        sent_message = await message.answer(
-            welcome_text(message.from_user, "km", []),
-            parse_mode="HTML",
-            reply_markup=menu(settings, message.from_user.id, "km"),
-        )
-        language = await safe_user_language(store, message.from_user.id)
+        try:
+            language = await store.user_language(message.from_user.id)
+        except Exception:
+            logger.exception("Could not load language preference for /start")
+            language = "km"
+        if language is None:
+            await message.answer(
+                "🌐 Please select your language / សូមជ្រើសរើសភាសា៖",
+                reply_markup=keyboard(
+                    [
+                        [InlineKeyboardButton(text="🇰🇭 ភាសាខ្មែរ", callback_data="lang:km")],
+                        [InlineKeyboardButton(text="🇺🇸 English", callback_data="lang:en")],
+                    ]
+                ),
+            )
+            return
         await safe_upsert_user(
             store,
             message.from_user.id,
@@ -192,7 +202,7 @@ def register_handlers(
         except Exception:
             logger.exception("Could not load categories for /start")
             categories = []
-        await sent_message.edit_text(
+        await message.answer(
             welcome_text(message.from_user, language, categories),
             parse_mode="HTML",
             reply_markup=menu(settings, message.from_user.id, language),

@@ -20,7 +20,7 @@ class Store:
             on_conflict="telegram_id",
         ).execute()
 
-    async def user_language(self, telegram_id: int) -> str:
+    async def user_language(self, telegram_id: int) -> str | None:
         result = await (
             self.client.table("users")
             .select("language")
@@ -28,7 +28,7 @@ class Store:
             .maybe_single()
             .execute()
         )
-        return (result.data or {}).get("language", "km")
+        return (result.data or {}).get("language")
 
     async def set_user_language(self, telegram_id: int, language: str) -> None:
         if language not in {"km", "en"}:
