@@ -45,6 +45,8 @@ create table if not exists public.orders (
     delivered_at timestamptz
 );
 
+alter table public.orders add column if not exists payment_message_id bigint;
+
 create table if not exists public.stock_items (
     id uuid primary key default gen_random_uuid(),
     product_id uuid not null references public.products(id),

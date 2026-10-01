@@ -1,8 +1,15 @@
 import hashlib
 import hmac
 from typing import Any
+from urllib.parse import quote
 
 import httpx
+
+
+def aba_mobile_deeplink(qr_string: str) -> str:
+    if not qr_string.strip():
+        raise ValueError("QR string must not be empty")
+    return f"abamobilebank://ababank.com?type=payway&qrcode={quote(qr_string, safe='')}"
 
 
 def verify_webhook_signature(raw_body: bytes, signature: str, secret: str) -> bool:
@@ -49,9 +56,12 @@ class KHPayClient:
             raise RuntimeError(payload.get("error", f"KHPAY returned HTTP {response.status_code}"))
         data = payload.get("data", {})
         payment_url = data.get("payment_url") or data.get("bakong_deeplink") or data.get("deeplink")
-        if not data.get("transaction_id") or not payment_url:
-            raise RuntimeError("KHPAY response is missing transaction_id or a payment link")
-        data["payment_url"] = payment_url
+        if not data.get("transaction_id"):
+            raise RuntimeError("KHPAY response is missing transaction_id")
+        if method == "qr" and (not data.get("qr_string") or not data.get("md5")):
+            raise RuntimeError("KHPAY response is missing qr_string or md5")
+        if payment_url:
+            data["payment_url"] = payment_url
         return data
 
     async def check_payment(self, transaction_id: str) -> dict[str, Any]:

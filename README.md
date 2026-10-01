@@ -4,7 +4,7 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 
 ## Setup
 
-1. Create a Supabase project. Run [`schema.sql`](schema.sql) in its SQL editor. Existing deployments should rerun it to add the user profile/language table; the schema uses idempotent `create` statements.
+1. Create a Supabase project. Run [`schema.sql`](schema.sql) in its SQL editor. Existing deployments should rerun it to apply additive tables and columns, including tutorial settings and payment-message tracking; the schema uses idempotent statements.
 2. Create a Telegram bot with BotFather and copy its token.
 3. Copy `.env.example` to `.env` and fill in the Telegram, Supabase, and KHPAY settings. Never commit `.env` or expose the Supabase service-role key.
 4. Generate the stock encryption key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and save it as `STOCK_ENCRYPTION_KEY`. Keep this key backed up: stock credentials cannot be decrypted without it.

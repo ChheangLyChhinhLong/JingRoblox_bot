@@ -2,7 +2,8 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app.bot import description_preview, menu, quantity_limit, safe_user_language, welcome_text
+from app.bot import deliver_order, description_preview, menu, quantity_limit, safe_user_language, welcome_text
+from app.security import encrypt_stock
 
 
 def test_welcome_text_escapes_profile_data_and_handles_missing_username():
@@ -61,6 +62,48 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 
     assert markup.inline_keyboard[2][0].callback_data == "how_to_buy"
     assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
+
+
+def test_delivery_deletes_payment_qr_before_fulfilling_and_sending_credentials():
+    async def run_test():
+        events = []
+        key = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+
+        async def delete_message(**kwargs):
+            events.append("delete")
+
+        async def clear_payment_message(order_id):
+            events.append("clear")
+
+        async def fulfill_order(order_id):
+            events.append("fulfill")
+            return [encrypt_stock("user:password", key)]
+
+        async def send_message(*args, **kwargs):
+            events.append("send")
+
+        async def mark_delivered(order_id):
+            events.append("mark")
+
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(side_effect=delete_message),
+            send_message=AsyncMock(side_effect=send_message),
+        )
+        store = SimpleNamespace(
+            payment_message=AsyncMock(return_value={"chat_id": 123, "payment_message_id": 456}),
+            clear_payment_message=AsyncMock(side_effect=clear_payment_message),
+            fulfill_order=AsyncMock(side_effect=fulfill_order),
+            user_language=AsyncMock(return_value="en"),
+            mark_delivered=AsyncMock(side_effect=mark_delivered),
+        )
+        settings = SimpleNamespace(stock_encryption_key=key)
+
+        await deliver_order(bot, store, settings, "order-123", 123)
+
+        assert events == ["delete", "clear", "fulfill", "send", "mark"]
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+
+    asyncio.run(run_test())
 
 
 def test_user_language_falls_back_to_khmer_when_preferences_are_unavailable():

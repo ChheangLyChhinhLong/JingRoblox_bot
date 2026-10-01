@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher
 from fastapi import FastAPI, HTTPException, Request
 from supabase import acreate_client
 
-from app.bot import deliver_order, reconcile_payments, register_handlers
+from app.bot import delete_payment_message, deliver_order, reconcile_payments, register_handlers
 from app.config import get_settings
 from app.payments import KHPayClient, verify_webhook_signature
 from app.store import Store
@@ -114,6 +114,7 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
             raise HTTPException(status_code=400, detail="Invalid payment amount") from None
         await deliver_order(bot, store, settings, order["id"], int(order["chat_id"]))
     else:
+        await delete_payment_message(bot, store, order["id"])
         await store.release_order(order["id"], expected_status)
 
     return {"received": True, "status": expected_status}

@@ -100,11 +100,40 @@ class Store:
         ).execute()
         return result.data
 
-    async def set_payment(self, order_id: str, transaction_id: str, payment_url: str) -> None:
+    async def set_payment(self, order_id: str, transaction_id: str, payment_url: str | None) -> None:
         await self.client.rpc(
             "set_order_payment",
             {"p_order_id": order_id, "p_transaction_id": transaction_id, "p_payment_url": payment_url},
         ).execute()
+
+    async def set_payment_message(self, order_id: str, message_id: int) -> str | None:
+        result = await (
+            self.client.table("orders")
+            .update({"payment_message_id": message_id})
+            .eq("id", order_id)
+            .select("status")
+            .maybe_single()
+            .execute()
+        )
+        return (result.data or {}).get("status")
+
+    async def payment_message(self, order_id: str) -> dict[str, Any] | None:
+        result = await (
+            self.client.table("orders")
+            .select("chat_id,payment_message_id")
+            .eq("id", order_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data
+
+    async def clear_payment_message(self, order_id: str) -> None:
+        await (
+            self.client.table("orders")
+            .update({"payment_message_id": None})
+            .eq("id", order_id)
+            .execute()
+        )
 
     async def order_by_transaction(self, transaction_id: str) -> dict[str, Any] | None:
         result = await (

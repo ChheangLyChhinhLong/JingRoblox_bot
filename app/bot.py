@@ -8,11 +8,12 @@ from typing import Any
 
 import qrcode
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.config import Settings
-from app.payments import KHPayClient
+from app.payments import KHPayClient, aba_mobile_deeplink
 from app.security import decrypt_stock
 from app.store import Store
 
@@ -82,6 +83,12 @@ def description_preview(description: str, language: str = "km") -> str:
 
 
 def payment_qr(payment: dict[str, Any]) -> BufferedInputFile | str:
+    qr_string = payment.get("qr_string")
+    if qr_string:
+        image = qrcode.make(str(qr_string))
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        return BufferedInputFile(output.getvalue(), filename="payment-qr.png")
     image_url = payment.get("qr_image_url")
     if image_url:
         return image_url
@@ -97,8 +104,9 @@ def payment_qr(payment: dict[str, Any]) -> BufferedInputFile | str:
         or payment.get("qr_data")
         or payment.get("qr")
         or payment.get("khqr")
-        or payment.get("payment_url")
     )
+    if not payload:
+        raise ValueError("KHPAY response is missing QR data")
     image = qrcode.make(str(payload))
     output = io.BytesIO()
     image.save(output, format="PNG")
@@ -154,6 +162,7 @@ async def safe_upsert_user(store: Store, telegram_id: int, username: str | None,
 
 
 async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: str, chat_id: int) -> None:
+    await delete_payment_message(bot, store, order_id)
     credentials = await store.fulfill_order(order_id)
     if not credentials:
         return
@@ -165,6 +174,21 @@ async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: st
         parse_mode="HTML",
     )
     await store.mark_delivered(order_id)
+
+
+async def delete_payment_message(bot: Bot, store: Store, order_id: str) -> None:
+    payment_message = await store.payment_message(order_id)
+    if not payment_message or not payment_message.get("payment_message_id"):
+        return
+    try:
+        await bot.delete_message(
+            chat_id=int(payment_message["chat_id"]),
+            message_id=int(payment_message["payment_message_id"]),
+        )
+    except TelegramBadRequest as exc:
+        if "message to delete not found" not in str(exc).lower():
+            raise
+    await store.clear_payment_message(order_id)
 
 
 def register_handlers(
@@ -487,7 +511,14 @@ def register_handlers(
                 callback.from_user.id,
                 method,
             )
-            await store.set_payment(order["id"], payment["transaction_id"], payment["payment_url"])
+            if method == "qr":
+                open_url = aba_mobile_deeplink(payment["qr_string"])
+                provider_label = "ABA Mobile"
+            else:
+                bakong_url = payment.get("bakong_deeplink") or payment.get("deeplink")
+                open_url = bakong_url if isinstance(bakong_url, str) and bakong_url.startswith("bakong://") else None
+                provider_label = "Bakong"
+            await store.set_payment(order["id"], payment["transaction_id"], open_url)
         except Exception:
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
             if order:
@@ -497,14 +528,21 @@ def register_handlers(
                 reply_markup=menu(settings, callback.from_user.id, language),
             )
             return
-        provider_label = "Bakong" if method == "bakong" else "KHQR"
-        rows = [
-            [
+        rows = []
+        if open_url:
+            rows.append(
+                [
                 InlineKeyboardButton(
-                    text=copy(language, f"🔗 បើក {provider_label}", f"🔗 Open {provider_label}"),
-                    url=payment["payment_url"],
+                    text=copy(
+                        language,
+                        "🔗 បើក ABA Mobile" if method == "qr" else "🔗 បើក Bakong",
+                        f"🔗 Open {provider_label}",
+                    ),
+                    url=open_url,
                 )
-            ],
+                ]
+            )
+        rows.extend([
             [
                 InlineKeyboardButton(
                     text=copy(language, "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", "✅ I paid · Check"),
@@ -512,7 +550,7 @@ def register_handlers(
                 )
             ],
             [InlineKeyboardButton(text=copy(language, "❌ លុបចោល", "❌ Cancel"), callback_data=f"cancel:{order['id']}")],
-        ]
+        ])
         caption = copy(
             language,
             f"ការបញ្ជាទិញ <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
@@ -520,13 +558,16 @@ def register_handlers(
             f"Order <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
             f"Scan the QR or open {provider_label} to pay, then tap Check payment.",
         )
-        await bot.send_photo(
+        payment_message = await bot.send_photo(
             callback.from_user.id,
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
             reply_markup=keyboard(rows),
         )
+        payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
+        if payment_status == "paid":
+            await delete_payment_message(bot, store, order["id"])
 
     @router.callback_query(F.data.startswith("cancel:"))
     async def cancel_order(callback: CallbackQuery) -> None:
@@ -561,14 +602,11 @@ def register_handlers(
                 return
             if payment_status == "paid":
                 await deliver_order(bot, store, settings, order_id, callback.from_user.id)
-                await callback.message.edit_caption(
-                    caption=copy(language, "ការបញ្ជាទិញនេះបានទូទាត់រួចហើយ។", "This order has already been paid."),
-                    reply_markup=keyboard([back_button("home", language)]),
-                )
                 return
+        await delete_payment_message(bot, store, order_id)
         await store.release_order(order_id)
-        await callback.message.edit_caption(
-            caption=copy(language, "បានលុបចោលការបញ្ជាទិញ។", "Order cancelled."),
+        await callback.message.answer(
+            copy(language, "បានលុបចោលការបញ្ជាទិញ។", "Order cancelled."),
             reply_markup=keyboard([back_button("home", language)]),
         )
 
@@ -603,6 +641,7 @@ def register_handlers(
             if status == "paid":
                 await deliver_order(bot, store, settings, order_id, callback.from_user.id)
             elif status in {"expired", "failed"}:
+                await delete_payment_message(bot, store, order_id)
                 await store.release_order(order_id, status)
                 await callback.message.answer(
                     copy(language, "ការទូទាត់នេះផុតកំណត់ ឬបរាជ័យ។ សូមបញ្ជាទិញម្ដងទៀត។", "Payment expired or failed. Please order again."),
@@ -1022,6 +1061,7 @@ async def reconcile_payments(bot: Bot, store: Store, payments: KHPayClient, sett
                     if status == "paid":
                         await deliver_order(bot, store, settings, order["id"], int(order["chat_id"]))
                     elif status in {"expired", "failed"}:
+                        await delete_payment_message(bot, store, order["id"])
                         await store.release_order(order["id"], status)
                 except Exception:
                     logger.exception("Reconciliation failed for order %s", order["id"])
