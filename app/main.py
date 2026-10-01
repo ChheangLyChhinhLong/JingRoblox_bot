@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from supabase import acreate_client
 
-from app.bot import delete_payment_message, deliver_order, reconcile_payments, register_handlers
+from app.bot import deliver_order, expire_payment, reconcile_payments, register_handlers
 from app.config import get_settings
 from app.payments import KHPayClient, verify_webhook_signature
 from app.store import Store
@@ -114,7 +114,7 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
     order = await store.order_by_transaction(transaction_id)
     if not order:
         return {"received": True, "status": "unknown_transaction"}
-    if order["status"] not in {"pending", "paid"}:
+    if order["status"] != "pending" and not (order["status"] == "paid" and expected_status == "paid"):
         return {"received": True, "status": "order_already_closed"}
 
     try:
@@ -138,8 +138,7 @@ async def khpay_webhook(request: Request) -> dict[str, bool | str]:
             raise HTTPException(status_code=400, detail="Invalid payment amount") from None
         await deliver_order(bot, store, settings, order["id"], int(order["chat_id"]))
     else:
-        await delete_payment_message(bot, store, order["id"])
-        await store.release_order(order["id"], expected_status)
+        await expire_payment(bot, store, order["id"], int(order["chat_id"]), expected_status)
 
     return {"received": True, "status": expected_status}
 

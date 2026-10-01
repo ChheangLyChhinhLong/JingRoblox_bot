@@ -401,6 +401,22 @@ async def delete_payment_message(bot: Bot, store: Store, order_id: str) -> None:
     await store.clear_payment_message(order_id)
 
 
+async def expire_payment(
+    bot: Bot,
+    store: Store,
+    order_id: str,
+    chat_id: int,
+    status: str,
+) -> None:
+    await delete_payment_message(bot, store, order_id)
+    await bot.send_message(
+        chat_id,
+        "❌ ការទូទាត់មិនបានបញ្ចប់។ QR code ត្រូវបានលុបចោល។ "
+        "សូមព្យាយាមម្តងទៀតប្រសិនបើអ្នកនៅតែចង់ទិញផលិតផលនេះ។",
+    )
+    await store.release_order(order_id, status)
+
+
 async def track_payment_message(bot: Bot, store: Store, order_id: str, message_id: int) -> None:
     payment_status = await store.set_payment_message(order_id, message_id)
     if payment_status != "pending":
@@ -810,12 +826,7 @@ def register_handlers(
             if status == "paid":
                 await deliver_order(bot, store, settings, order_id, callback.from_user.id)
             elif status in {"expired", "failed"}:
-                await delete_payment_message(bot, store, order_id)
-                await store.release_order(order_id, status)
-                await callback.message.answer(
-                    copy(language, "ការទូទាត់នេះផុតកំណត់ ឬបរាជ័យ។ សូមបញ្ជាទិញម្ដងទៀត។", "Payment expired or failed. Please order again."),
-                    reply_markup=menu(settings, callback.from_user.id, language),
-                )
+                await expire_payment(bot, store, order_id, callback.from_user.id, status)
             else:
                 await callback.message.answer(
                     copy(language, "មិនទាន់ទទួលបានការទូទាត់ទេ។ សូមបញ្ចប់ការទូទាត់តាម KHPAY។", "Payment has not arrived yet. Please complete payment with KHPAY.")
@@ -1340,8 +1351,7 @@ async def reconcile_payments(bot: Bot, store: Store, payments: KHPayClient, sett
                     if status == "paid":
                         await deliver_order(bot, store, settings, order["id"], int(order["chat_id"]))
                     elif status in {"expired", "failed"}:
-                        await delete_payment_message(bot, store, order["id"])
-                        await store.release_order(order["id"], status)
+                        await expire_payment(bot, store, order["id"], int(order["chat_id"]), status)
                 except Exception:
                     logger.exception("Reconciliation failed for order %s", order["id"])
             for order in await store.undelivered_orders():

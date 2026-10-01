@@ -9,6 +9,7 @@ from app.bot import (
     deliver_order,
     description_preview,
     edit_text_message,
+    expire_payment,
     menu,
     notify_stock_added,
     payment_caption,
@@ -248,6 +249,31 @@ def test_terminal_payment_status_deletes_qr_after_message_is_saved():
 
             bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
             store.clear_payment_message.assert_awaited_once_with("order-123")
+
+    asyncio.run(run_test())
+
+
+def test_expired_payment_deletes_qr_notifies_user_and_releases_order():
+    async def run_test():
+        bot = SimpleNamespace(
+            delete_message=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        store = SimpleNamespace(
+            payment_message=AsyncMock(return_value={"chat_id": 123, "message_id": 456}),
+            clear_payment_message=AsyncMock(),
+            release_order=AsyncMock(),
+        )
+
+        await expire_payment(bot, store, "order-123", 123, "expired")
+
+        bot.delete_message.assert_awaited_once_with(chat_id=123, message_id=456)
+        bot.send_message.assert_awaited_once_with(
+            123,
+            "❌ ការទូទាត់មិនបានបញ្ចប់។ QR code ត្រូវបានលុបចោល។ "
+            "សូមព្យាយាមម្តងទៀតប្រសិនបើអ្នកនៅតែចង់ទិញផលិតផលនេះ។",
+        )
+        store.release_order.assert_awaited_once_with("order-123", "expired")
 
     asyncio.run(run_test())
 
