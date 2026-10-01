@@ -9,6 +9,32 @@ class Store:
     def __init__(self, client: AsyncClient) -> None:
         self.client = client
 
+    async def upsert_user(self, telegram_id: int, username: str | None, first_name: str, language: str) -> None:
+        await self.client.table("users").upsert(
+            {
+                "telegram_id": telegram_id,
+                "username": username,
+                "first_name": first_name,
+                "language": language,
+            },
+            on_conflict="telegram_id",
+        ).execute()
+
+    async def user_language(self, telegram_id: int) -> str:
+        result = await (
+            self.client.table("users")
+            .select("language")
+            .eq("telegram_id", telegram_id)
+            .maybe_single()
+            .execute()
+        )
+        return (result.data or {}).get("language", "km")
+
+    async def set_user_language(self, telegram_id: int, language: str) -> None:
+        if language not in {"km", "en"}:
+            raise ValueError("Unsupported language")
+        await self.client.table("users").update({"language": language}).eq("telegram_id", telegram_id).execute()
+
     async def categories(self) -> list[dict[str, Any]]:
         result = await (
             self.client.table("categories")

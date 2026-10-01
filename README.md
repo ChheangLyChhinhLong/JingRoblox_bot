@@ -4,7 +4,7 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 
 ## Setup
 
-1. Create a Supabase project. Run [`schema.sql`](schema.sql) in its SQL editor.
+1. Create a Supabase project. Run [`schema.sql`](schema.sql) in its SQL editor. Existing deployments should rerun it to add the user profile/language table; the schema uses idempotent `create` statements.
 2. Create a Telegram bot with BotFather and copy its token.
 3. Copy `.env.example` to `.env` and fill in the Telegram, Supabase, and KHPAY settings. Never commit `.env` or expose the Supabase service-role key.
 4. Generate the stock encryption key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` and save it as `STOCK_ENCRYPTION_KEY`. Keep this key backed up: stock credentials cannot be decrypted without it.
@@ -19,9 +19,11 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 - Customers navigate categories, products, quantity, payment, order history, and support using inline buttons. Product listings show current available stock, and quantity selection is limited to available stock and three items per order.
 - New orders atomically reserve stock in Supabase. If checkout creation fails or KHPAY reports an expired/failed payment, the reservation is released.
 - The bot checks KHPAY on demand and in the background. It delivers credentials only after the authenticated KHPAY status endpoint reports `paid`; it never trusts a browser redirect.
+- Customer language (`km` or `en`) and Telegram profile details are stored in the `users` table. The home screen lists active categories from Supabase.
+- Checkout supports KHPAY KHQR and Bakong generation, shows a QR image and provider link, and lets the owner cancel a pending order after payment status verification.
 - Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. These workflows do not use admin slash commands; the standard Telegram `/start` entry point remains available.
 - Catalogs and packages can also be managed directly in Supabase. The command-line importer remains available.
-- This starter uses KHPAY's ABA `/qr/generate` endpoint and USD. The KHPAY account must have an active payout link.
+- Checkout uses KHPAY `/qr/generate` or `/bakong/generate` in USD. Configure the matching KHPAY products and active payout link in the KHPAY account.
 
 ## Operations and security
 

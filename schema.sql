@@ -1,5 +1,13 @@
 create extension if not exists pgcrypto;
 
+create table if not exists public.users (
+    telegram_id bigint primary key,
+    username text,
+    first_name text not null,
+    language text not null default 'km' check (language in ('km', 'en')),
+    created_at timestamptz not null default now()
+);
+
 create table if not exists public.categories (
     id uuid primary key default gen_random_uuid(),
     name text not null,
@@ -46,6 +54,7 @@ create table if not exists public.stock_items (
 create index if not exists stock_available_idx on public.stock_items(product_id) where status = 'available';
 create index if not exists orders_pending_idx on public.orders(status, created_at) where status = 'pending';
 
+alter table public.users enable row level security;
 alter table public.categories enable row level security;
 alter table public.products enable row level security;
 alter table public.orders enable row level security;

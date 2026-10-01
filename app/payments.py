@@ -22,16 +22,25 @@ class KHPayClient:
             timeout=20.0,
         )
 
-    async def create_payment(self, amount: str, order_id: str) -> dict[str, Any]:
+    async def create_payment(
+        self,
+        amount: str,
+        order_id: str,
+        telegram_id: int,
+        method: str = "qr",
+    ) -> dict[str, Any]:
+        if method not in {"qr", "bakong"}:
+            raise ValueError("Unsupported KHPAY payment method")
         body: dict[str, Any] = {
             "amount": amount,
             "currency": "USD",
             "note": f"Telegram order {order_id}",
+            "metadata": {"telegram_id": telegram_id, "order_id": order_id},
         }
         if self._webhook_url:
             body["callback_url"] = self._webhook_url
         response = await self._client.post(
-            "/qr/generate",
+            f"/{method}/generate",
             headers={"Idempotency-Key": order_id},
             json=body,
         )
@@ -39,8 +48,10 @@ class KHPayClient:
         if response.is_error or not payload.get("success"):
             raise RuntimeError(payload.get("error", f"KHPAY returned HTTP {response.status_code}"))
         data = payload.get("data", {})
-        if not data.get("transaction_id") or not data.get("payment_url"):
-            raise RuntimeError("KHPAY response is missing transaction_id or payment_url")
+        payment_url = data.get("payment_url") or data.get("bakong_deeplink") or data.get("deeplink")
+        if not data.get("transaction_id") or not payment_url:
+            raise RuntimeError("KHPAY response is missing transaction_id or a payment link")
+        data["payment_url"] = payment_url
         return data
 
     async def check_payment(self, transaction_id: str) -> dict[str, Any]:
