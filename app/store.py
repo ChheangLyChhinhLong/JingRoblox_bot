@@ -252,6 +252,21 @@ class Store:
         ).execute()
         return len(result.data or [])
 
+    async def remove_stock(self, product_id: str, credentials: list[str], key: str) -> int:
+        fingerprints = list(dict.fromkeys(stock_fingerprint(value, key) for value in credentials))
+        if not fingerprints:
+            return 0
+        result = await (
+            self.client.table("stock_items")
+            .delete()
+            .eq("product_id", product_id)
+            .eq("status", "available")
+            .in_("credential_fingerprint", fingerprints)
+            .select("id")
+            .execute()
+        )
+        return len(result.data or [])
+
     async def sales_summary(self) -> dict[str, Any]:
         result = await self.client.rpc("sales_summary").execute()
         return result.data

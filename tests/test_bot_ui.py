@@ -14,7 +14,7 @@ from app.bot import (
     upload_product_image,
     welcome_text,
 )
-from app.security import encrypt_stock
+from app.security import encrypt_stock, stock_fingerprint
 from app.store import Store
 
 
@@ -161,6 +161,33 @@ def test_product_creation_inserts_category_and_cloudinary_image_url():
                 "description": "Description",
                 "image_url": "https://res.cloudinary.com/example/image/upload/test.png",
             }
+        )
+
+    asyncio.run(run_test())
+
+
+def test_stock_removal_matches_only_available_stock_for_the_selected_product():
+    async def run_test():
+        product_id = "product-123"
+        credential = "user:password"
+        key = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+        query = Mock()
+        query.delete.return_value = query
+        query.eq.return_value = query
+        query.in_.return_value = query
+        query.select.return_value = query
+        query.execute = AsyncMock(return_value=SimpleNamespace(data=[{"id": "stock-1"}]))
+        client = SimpleNamespace(table=Mock(return_value=query))
+
+        removed = await Store(client).remove_stock(product_id, [credential], key)
+
+        assert removed == 1
+        client.table.assert_called_once_with("stock_items")
+        query.eq.assert_any_call("product_id", product_id)
+        query.eq.assert_any_call("status", "available")
+        query.in_.assert_called_once_with(
+            "credential_fingerprint",
+            [stock_fingerprint(credential, key)],
         )
 
     asyncio.run(run_test())

@@ -835,6 +835,7 @@ def register_handlers(
         rows = [
             [InlineKeyboardButton(text="✏️ កែ Package", callback_data=f"admin:product-edit:{product_data['id']}")],
             [InlineKeyboardButton(text="➕ បន្ថែមស្តុក", callback_data=f"admin:stock-add:{product_data['id']}")],
+            [InlineKeyboardButton(text="➖ ដកស្តុក", callback_data=f"admin:stock-remove:{product_data['id']}")],
             [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data=f"au:{product_data['id']}")],
             [InlineKeyboardButton(text="🗑 បិទ Package", callback_data=f"admin:product-disable:{product_data['id']}")],
             back_button(f"ac:{product_data['category_id']}"),
@@ -985,7 +986,7 @@ def register_handlers(
     async def cancel_admin_input(callback: CallbackQuery) -> None:
         pending = pending_admin_input.pop(callback.from_user.id, None)
         await callback.answer("បានបោះបង់")
-        target = f"ap:{pending[1]}" if pending and pending[0] == "stock_add" else "admin:catalogs"
+        target = f"ap:{pending[1]}" if pending and pending[0] in {"stock_add", "stock_remove"} else "admin:catalogs"
         await callback.message.edit_text("បានបោះបង់។", reply_markup=keyboard([back_button(target)]))
 
     @router.callback_query(F.data.startswith("admin:stock-add:"))
@@ -997,6 +998,18 @@ def register_handlers(
         pending_admin_input[callback.from_user.id] = ("stock_add", product_id)
         await callback.message.answer(
             "ផ្ញើ Code ឬ username:password មួយក្នុងមួយបន្ទាត់ (អាចបញ្ចូល 1 ឬច្រើន)៖",
+            reply_markup=keyboard([back_button("admin:cancel-input")]),
+        )
+
+    @router.callback_query(F.data.startswith("admin:stock-remove:"))
+    async def remove_stock_prompt(callback: CallbackQuery) -> None:
+        await callback.answer()
+        if callback.from_user.id not in settings.admin_ids:
+            return
+        product_id = callback.data.removeprefix("admin:stock-remove:")
+        pending_admin_input[callback.from_user.id] = ("stock_remove", product_id)
+        await callback.message.answer(
+            "ផ្ញើ Code ឬ username:password ដែលចង់ដក មួយក្នុងមួយបន្ទាត់។ ត្រូវផ្គូផ្គងនឹងទិន្នន័យដើម ហើយដកបានតែស្តុកដែលមិនទាន់កក់ ឬលក់៖",
             reply_markup=keyboard([back_button("admin:cancel-input")]),
         )
 
@@ -1078,6 +1091,11 @@ def register_handlers(
                 if not credentials:
                     raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
                 added = await store.import_stock(target_id, credentials, settings.stock_encryption_key)
+            elif action == "stock_remove":
+                credentials = [line.strip() for line in text.splitlines() if line.strip()]
+                if not credentials:
+                    raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
+                removed = await store.remove_stock(target_id, credentials, settings.stock_encryption_key)
             else:
                 return
         except (InvalidOperation, ValueError) as exc:
@@ -1091,13 +1109,24 @@ def register_handlers(
             await message.answer("មិនអាចរក្សាទុកបានទេ។ សូមព្យាយាមម្ដងទៀត។")
             return
         pending_admin_input.pop(message.from_user.id, None)
-        if action == "stock_add":
+        if action in {"stock_add", "stock_remove"}:
+            if action == "stock_add":
+                result_message = f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។"
+            else:
+                result_message = f"បានដកស្តុកដែលមិនទាន់លក់ចំនួន {removed}។"
             await message.answer(
-                f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។",
+                result_message,
                 reply_markup=keyboard([back_button(f"ap:{target_id}")]),
             )
             return
-        target = "admin:catalogs" if action.startswith("category") else "admin"
+        if action == "category_edit":
+            target = f"ac:{target_id}"
+        elif action == "product_edit":
+            target = f"ap:{target_id}"
+        elif action == "product_add":
+            target = f"ac:{target_id}"
+        else:
+            target = "admin:catalogs"
         await message.answer("បានរក្សាទុកដោយជោគជ័យ។", reply_markup=keyboard([back_button(target)]))
 
     @router.callback_query(F.data == "admin:upload")
