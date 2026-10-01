@@ -30,28 +30,19 @@ def money(amount: Any) -> str:
     return f"${Decimal(str(amount)):.2f}"
 
 
-def category_icon(name: str) -> str:
-    lowered_name = name.casefold()
-    if "roblox" in lowered_name or "robux" in lowered_name:
-        return "💎"
-    if "gamepass" in lowered_name:
-        return "🎮"
-    if "premium" in lowered_name or "tool" in lowered_name:
-        return "⚡️"
-    return "🛍"
-
-
 def copy(language: str, khmer: str, english: str) -> str:
     return english if language == "en" else khmer
 
 
 def welcome_text(user: Any, language: str = "km", categories: list[dict[str, Any]] | None = None) -> str:
     username = f"@{html.escape(user.username)}" if user.username else "មិនមាន"
-    category_rows = [
-        f"{'└─' if index == len(categories or []) - 1 else '├─'} {category_icon(item['name'])} "
-        f"<b>{html.escape(item['name'])}</b>"
-        for index, item in enumerate(categories or [])
-    ]
+    category_rows = []
+    for index, item in enumerate(categories or []):
+        branch = "└─" if index == len(categories or []) - 1 else "├─"
+        category_name = html.escape(str(item.get("name") or ""))
+        description = html.escape(str(item.get("description") or "").strip())
+        description_text = f" ({description})" if description else ""
+        category_rows.append(f"{branch} 🛍 <b>{category_name}</b>{description_text}")
     category_list = "\n".join(category_rows) or copy(
         language,
         "└─ មិនទាន់មាន Catalog ទេ",
@@ -273,7 +264,7 @@ def register_handlers(
         rows = [
             [
                 InlineKeyboardButton(
-                    text=f"{category_icon(item['name'])} {item['name']}",
+                    text=f"🛍 {item['name']}",
                     callback_data=f"c:{item['id']}",
                 )
             ]
@@ -306,7 +297,7 @@ def register_handlers(
         products = await store.products(category_id)
         if not products:
             await callback.message.edit_text(
-                f"{category_icon(category_data['name'])} <b>{html.escape(category_data['name'])}</b>\n"
+                f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
                 "───────────────────\n"
                 + copy(language, "ប្រភេទនេះមិនទាន់មាន Package ទេ។", "There are no packages in this category yet."),
                 parse_mode="HTML",
@@ -330,10 +321,10 @@ def register_handlers(
         intro = html.escape(description) if description else ""
         text = copy(
             language,
-            f"{category_icon(category_data['name'])} <b>{html.escape(category_data['name'])}</b>\n"
+            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
             "───────────────────\n"
             f"{intro + chr(10) if intro else ''}សូមជ្រើសរើស Package ខាងក្រោម៖",
-            f"{category_icon(category_data['name'])} <b>{html.escape(category_data['name'])}</b>\n"
+            f"🛍 <b>{html.escape(category_data['name'])}</b>\n"
             "───────────────────\n"
             f"{intro + chr(10) if intro else ''}Choose a package below:",
         )
@@ -387,7 +378,7 @@ def register_handlers(
         else:
             rows.append([InlineKeyboardButton(text=copy(language, "អស់ស្តុក", "Out of stock"), callback_data="noop")])
         rows.append(back_button(f"c:{product_data['category_id']}", language))
-        category_title = f"{category_icon(category_data['name'])} {html.escape(category_data['name'])}\n" if category_data else ""
+        category_title = f"🛍 {html.escape(category_data['name'])}\n" if category_data else ""
         description = description_preview(product_data.get("description") or "", language)
         text = (
             f"{category_title}"
@@ -659,7 +650,7 @@ def register_handlers(
             return
         result = await store.client.table("categories").select("id,name").eq("active", True).order("sort_order").execute()
         rows = [
-            [InlineKeyboardButton(text=f"{category_icon(item['name'])} {item['name']}", callback_data=f"ac:{item['id']}")]
+            [InlineKeyboardButton(text=f"🛍 {item['name']}", callback_data=f"ac:{item['id']}")]
             for item in result.data
         ]
         rows.extend(

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.bot import category_icon, description_preview, quantity_limit, welcome_text
+from app.bot import description_preview, quantity_limit, welcome_text
 
 
 def test_welcome_text_escapes_profile_data_and_handles_missing_username():
@@ -27,17 +27,18 @@ def test_english_welcome_shows_account_details():
 def test_welcome_lists_database_categories():
     user = SimpleNamespace(id=12345, first_name="Jing", username="jing")
 
-    text = welcome_text(user, categories=[{"name": "Roblox Gift Cards"}, {"name": "VPN Tools"}])
+    text = welcome_text(
+        user,
+        categories=[
+            {"name": "Gift Cards", "description": "Instant delivery"},
+            {"name": "VPN & Tools", "description": "Secure access"},
+        ],
+    )
 
-    assert "Roblox Gift Cards" in text
-    assert "VPN Tools" in text
-
-
-def test_category_icons_match_catalog_names():
-    assert category_icon("Roblox Gift Cards") == "💎"
-    assert category_icon("Gamepass Gift") == "🎮"
-    assert category_icon("Premium Accounts & Tools") == "⚡️"
-    assert category_icon("Other") == "🛍"
+    assert "Gift Cards</b> (Instant delivery)" in text
+    assert "VPN &amp; Tools</b> (Secure access)" in text
+    assert "├─ 🛍" in text
+    assert "└─ 🛍" in text
 
 
 def test_quantity_limit_matches_available_stock_and_order_cap():
