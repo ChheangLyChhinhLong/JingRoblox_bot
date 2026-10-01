@@ -30,6 +30,24 @@ class Store:
         )
         return (result.data or {}).get("language")
 
+    async def stock_notification_users(self) -> list[dict[str, Any]]:
+        page_size = 1000
+        offset = 0
+        users: list[dict[str, Any]] = []
+        while True:
+            result = await (
+                self.client.table("users")
+                .select("telegram_id,language")
+                .order("telegram_id")
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            page = result.data or []
+            users.extend(page)
+            if len(page) < page_size:
+                return users
+            offset += page_size
+
     async def set_user_language(self, telegram_id: int, language: str) -> None:
         if language not in {"km", "en"}:
             raise ValueError("Unsupported language")

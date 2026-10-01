@@ -35,7 +35,25 @@ async def main() -> None:
     result = await supabase.table("stock_items").upsert(
         rows, on_conflict="product_id,credential_fingerprint", ignore_duplicates=True
     ).execute()
-    print(f"Imported {len(result.data)} stock item(s).")
+    added = len(result.data or [])
+    print(f"Imported {added} stock item(s).")
+    if added and os.environ.get("BOT_TOKEN"):
+        from aiogram import Bot
+
+        from app.bot import notify_stock_added
+        from app.store import Store
+
+        bot = Bot(os.environ["BOT_TOKEN"])
+        try:
+            await notify_stock_added(
+                bot,
+                Store(supabase),
+                os.environ.get("STOCK_NOTIFICATION_CHAT_IDS", ""),
+                args.product_id,
+                added,
+            )
+        finally:
+            await bot.session.close()
 
 
 if __name__ == "__main__":

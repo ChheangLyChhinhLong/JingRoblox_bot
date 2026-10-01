@@ -11,6 +11,8 @@ services:
         sync: false
       - key: TELEGRAM_ADMIN_IDS
         sync: false
+      - key: STOCK_NOTIFICATION_CHAT_IDS
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

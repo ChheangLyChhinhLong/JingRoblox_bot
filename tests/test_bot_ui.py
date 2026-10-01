@@ -8,6 +8,7 @@ from app.bot import (
     deliver_order,
     description_preview,
     menu,
+    notify_stock_added,
     payment_caption,
     payment_keyboard,
     parse_product_caption,
@@ -330,3 +331,71 @@ def test_user_language_falls_back_to_khmer_when_preferences_are_unavailable():
     language = asyncio.run(safe_user_language(store, 12345))
 
     assert language == "km"
+
+
+def test_stock_notification_reaches_users_and_configured_chats_once():
+    async def run_test():
+        bot = SimpleNamespace(send_message=AsyncMock())
+        store = SimpleNamespace(
+            product=AsyncMock(return_value={"id": "product-123", "name": "Robux"}),
+            stock_notification_users=AsyncMock(
+                return_value=[
+                    {"telegram_id": 12345, "language": "en"},
+                    {"telegram_id": 23456, "language": "km"},
+                ]
+            ),
+        )
+        await notify_stock_added(bot, store, "-100987,@shopnews,-100987", "product-123", 4)
+
+        assert [call.args[0] for call in bot.send_message.await_args_list] == [
+            12345,
+            23456,
+            -100987,
+            "@shopnews",
+        ]
+        assert "New quantity: 4" in bot.send_message.await_args_list[0].args[1]
+        assert "ចំនួនថ្មី៖ 4" in bot.send_message.await_args_list[1].args[1]
+        assert "New quantity: 4" in bot.send_message.await_args_list[2].args[1]
+        assert bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "p:product-123"
+
+    asyncio.run(run_test())
+
+
+def test_stock_notification_skips_duplicate_stock():
+    async def run_test():
+        bot = SimpleNamespace(send_message=AsyncMock())
+        store = SimpleNamespace(
+            product=AsyncMock(),
+            stock_notification_users=AsyncMock(),
+        )
+        await notify_stock_added(bot, store, "@shopnews", "product-123", 0)
+
+        store.product.assert_not_awaited()
+        store.stock_notification_users.assert_not_awaited()
+        bot.send_message.assert_not_awaited()
+
+    asyncio.run(run_test())
+
+
+def test_stock_notification_users_are_loaded_in_pages():
+    async def run_test():
+        first_page = [{"telegram_id": user_id, "language": "km"} for user_id in range(1000)]
+        second_page = [{"telegram_id": 1000, "language": "en"}]
+        query = Mock()
+        query.select.return_value = query
+        query.order.return_value = query
+        query.range.return_value = query
+        query.execute = AsyncMock(
+            side_effect=[
+                SimpleNamespace(data=first_page),
+                SimpleNamespace(data=second_page),
+            ]
+        )
+        client = SimpleNamespace(table=Mock(return_value=query))
+
+        users = await Store(client).stock_notification_users()
+
+        assert len(users) == 1001
+        assert [call.args for call in query.range.call_args_list] == [(0, 999), (1000, 1999)]
+
+    asyncio.run(run_test())

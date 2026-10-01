@@ -31,6 +31,7 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 ## Operations and security
 
 - Keep `TELEGRAM_ADMIN_IDS` as comma-separated numeric Telegram user IDs.
+- Set `STOCK_NOTIFICATION_CHAT_IDS` to comma-separated group/channel chat IDs or public channel usernames (for example, `-1001234567890,@myshopnews`) to receive new-stock announcements. The bot also notifies users already recorded in the `users` table; blocked users and chats where the bot cannot post are skipped. Add the bot to each group/channel and grant permission to send messages. The CLI stock importer sends notifications when `BOT_TOKEN` is configured.
 - Keep Supabase RLS enabled and use only the service-role key on this private server. Do not add client policies exposing stock or orders.
 - The bot stores encrypted credentials in `stock_items`; protect and back up `STOCK_ENCRYPTION_KEY` independently of Supabase.
 - Run a single Render instance while using long polling. A second instance would conflict on Telegram polling.

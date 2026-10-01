@@ -279,6 +279,66 @@ async def safe_upsert_user(store: Store, telegram_id: int, username: str | None,
         logger.exception("Could not save profile for Telegram user %s", telegram_id)
 
 
+async def notify_stock_added(bot: Bot, store: Store, chat_ids: str, product_id: str, added: int) -> None:
+    if added < 1:
+        return
+    try:
+        product = await store.product(product_id)
+        if not product:
+            logger.warning("Skipping stock notification for unavailable product %s", product_id)
+            return
+        users = await store.stock_notification_users()
+    except Exception:
+        logger.exception("Could not prepare stock notification for product %s", product_id)
+        return
+
+    destinations: dict[int | str, str | None] = {
+        int(user["telegram_id"]): user.get("language", "km") for user in users
+    }
+    for value in chat_ids.split(","):
+        chat = value.strip()
+        if not chat:
+            continue
+        try:
+            chat_id: int | str = int(chat)
+        except ValueError:
+            if not chat.startswith("@"):
+                logger.warning("Ignoring invalid stock notification chat %r", chat)
+                continue
+            chat_id = chat
+        destinations.setdefault(chat_id, None)
+
+    keyboard_markup = keyboard(
+        [[InlineKeyboardButton(text="🛍 មើល Package / View product", callback_data=f"p:{product_id}")]]
+    )
+    sent = 0
+    failed = 0
+    for index, (chat_id, language) in enumerate(destinations.items(), start=1):
+        if language == "en":
+            text = f"📦 New stock is available!\n🛍 {product['name']}\n✅ New quantity: {added}"
+        elif language == "km":
+            text = f"📦 មានស្តុកថ្មីហើយ!\n🛍 {product['name']}\n✅ ចំនួនថ្មី៖ {added}"
+        else:
+            text = (
+                f"📦 មានស្តុកថ្មី / New stock is available\n"
+                f"🛍 {product['name']}\n✅ ចំនួនថ្មី / New quantity: {added}"
+            )
+        try:
+            await bot.send_message(chat_id, text, reply_markup=keyboard_markup)
+            sent += 1
+        except Exception:
+            failed += 1
+            logger.debug("Could not send stock notification to %s", chat_id, exc_info=True)
+        if index % 20 == 0:
+            await asyncio.sleep(1)
+    logger.info(
+        "Stock notification for product %s: sent to %s chats, failed for %s",
+        product_id,
+        sent,
+        failed,
+    )
+
+
 async def send_welcome(message: Message, store: Store, settings: Settings) -> None:
     user = message.from_user
     if not user:
@@ -1083,6 +1143,7 @@ def register_handlers(
                 if stock_add:
                     product_id, credentials = stock_add
                     added = await store.import_stock(product_id, credentials, settings.stock_encryption_key)
+                    await notify_stock_added(bot, store, settings.stock_notification_chat_ids, product_id, added)
                     await message.answer(f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។")
                     return
             except ValueError as exc:
@@ -1131,6 +1192,7 @@ def register_handlers(
                 if not credentials:
                     raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
                 added = await store.import_stock(target_id, credentials, settings.stock_encryption_key)
+                await notify_stock_added(bot, store, settings.stock_notification_chat_ids, target_id, added)
             elif action == "stock_remove":
                 credentials = [line.strip() for line in text.splitlines() if line.strip()]
                 if not credentials:
@@ -1222,6 +1284,7 @@ def register_handlers(
             await message.answer("មិនអាចបញ្ចូលស្តុកបានទេ។ សូមព្យាយាមម្ដងទៀត។")
             return
         pending_stock_upload.pop(message.from_user.id, None)
+        await notify_stock_added(bot, store, settings.stock_notification_chat_ids, product_id, added)
         await message.answer(f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។", reply_markup=keyboard([back_button("admin")]))
 
     @router.callback_query(F.data == "admin:sales")
