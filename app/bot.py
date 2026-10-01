@@ -136,12 +136,27 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
     ]
 
 
+async def safe_user_language(store: Store, telegram_id: int) -> str:
+    try:
+        return await store.user_language(telegram_id)
+    except Exception:
+        logger.exception("Could not load language preference for Telegram user %s", telegram_id)
+        return "km"
+
+
+async def safe_upsert_user(store: Store, telegram_id: int, username: str | None, first_name: str, language: str) -> None:
+    try:
+        await store.upsert_user(telegram_id, username, first_name, language)
+    except Exception:
+        logger.exception("Could not save profile for Telegram user %s", telegram_id)
+
+
 async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: str, chat_id: int) -> None:
     credentials = await store.fulfill_order(order_id)
     if not credentials:
         return
     details = "\n".join(f"<code>{html.escape(decrypt_stock(value, settings.stock_encryption_key))}</code>" for value in credentials)
-    language = await store.user_language(chat_id)
+    language = await safe_user_language(store, chat_id)
     await bot.send_message(
         chat_id,
         copy(language, f"✅ បានបញ្ជាក់ការទូទាត់។ ទិន្នន័យរបស់អ្នក៖\n\n{details}", f"✅ Payment confirmed. Your delivery:\n\n{details}"),
@@ -159,15 +174,25 @@ def register_handlers(
 ) -> None:
     @router.message(CommandStart())
     async def start(message: Message) -> None:
-        language = await store.user_language(message.from_user.id)
-        await store.upsert_user(
+        sent_message = await message.answer(
+            welcome_text(message.from_user, "km", []),
+            parse_mode="HTML",
+            reply_markup=menu(settings, message.from_user.id, "km"),
+        )
+        language = await safe_user_language(store, message.from_user.id)
+        await safe_upsert_user(
+            store,
             message.from_user.id,
             message.from_user.username,
             message.from_user.first_name,
             language,
         )
-        categories = await store.categories()
-        await message.answer(
+        try:
+            categories = await store.categories()
+        except Exception:
+            logger.exception("Could not load categories for /start")
+            categories = []
+        await sent_message.edit_text(
             welcome_text(message.from_user, language, categories),
             parse_mode="HTML",
             reply_markup=menu(settings, message.from_user.id, language),
@@ -176,7 +201,7 @@ def register_handlers(
     @router.callback_query(F.data == "home")
     async def home(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         categories = await store.categories()
         await callback.message.edit_text(
             welcome_text(callback.from_user, language, categories),
@@ -187,7 +212,7 @@ def register_handlers(
     @router.callback_query(F.data == "language")
     async def language_menu(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         rows = [
             [InlineKeyboardButton(text="🇰🇭 ភាសាខ្មែរ", callback_data="lang:km")],
             [InlineKeyboardButton(text="🇺🇸 English", callback_data="lang:en")],
@@ -204,13 +229,18 @@ def register_handlers(
         if language not in {"km", "en"}:
             await callback.answer("Unsupported language", show_alert=True)
             return
-        await store.upsert_user(
+        language_before_update = await safe_user_language(store, callback.from_user.id)
+        await safe_upsert_user(
+            store,
             callback.from_user.id,
             callback.from_user.username,
             callback.from_user.first_name,
-            await store.user_language(callback.from_user.id),
+            language_before_update,
         )
-        await store.set_user_language(callback.from_user.id, language)
+        try:
+            await store.set_user_language(callback.from_user.id, language)
+        except Exception:
+            logger.exception("Could not save language preference for Telegram user %s", callback.from_user.id)
         await callback.answer()
         categories = await store.categories()
         await callback.message.edit_text(
@@ -222,7 +252,7 @@ def register_handlers(
     @router.callback_query(F.data == "guide")
     async def buying_guide(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         redeem_button = InlineKeyboardButton(
             text=copy(language, "🌐 បើក Roblox Redeem", "🌐 Open Roblox Redeem"),
             url="https://www.roblox.com/redeem",
@@ -249,7 +279,7 @@ def register_handlers(
     @router.callback_query(F.data == "shop")
     async def shop(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         categories = await store.categories()
         if not categories:
             await callback.message.edit_text(
@@ -285,7 +315,7 @@ def register_handlers(
     @router.callback_query(F.data.startswith("c:"))
     async def category(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         category_id = callback.data[2:]
         category_data = await store.category(category_id)
         if not category_data:
@@ -333,7 +363,7 @@ def register_handlers(
     @router.callback_query(F.data.startswith("p:"))
     async def product(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         product_data = await store.product(callback.data[2:])
         if not product_data:
             await callback.message.edit_text(
@@ -398,7 +428,7 @@ def register_handlers(
     @router.callback_query(F.data.startswith("qty:"))
     async def change_quantity(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         _, product_id, quantity_text = callback.data.split(":")
         product_data = await store.product(product_id)
         if not product_data:
@@ -417,7 +447,7 @@ def register_handlers(
     async def buy(callback: CallbackQuery) -> None:
         await callback.answer()
         _, product_id, quantity_text = callback.data.split(":")
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         rows = [
             [InlineKeyboardButton(text="🇰🇭 KHQR", callback_data=f"pay:qr:{product_id}:{quantity_text}")],
             [InlineKeyboardButton(text="🏦 Bakong", callback_data=f"pay:bakong:{product_id}:{quantity_text}")],
@@ -430,7 +460,7 @@ def register_handlers(
 
     @router.callback_query(F.data.startswith("pay:"))
     async def create_checkout(callback: CallbackQuery) -> None:
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         await callback.answer(copy(language, "កំពុងបង្កើតការទូទាត់...", "Creating payment..."))
         _, method, product_id, quantity_text = callback.data.split(":")
         order = None
@@ -496,7 +526,7 @@ def register_handlers(
             .execute()
         )
         data = result.data
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         if not data:
             await callback.message.answer(copy(language, "រកមិនឃើញការបញ្ជាទិញទេ។", "Order not found."))
             return
@@ -529,7 +559,7 @@ def register_handlers(
 
     @router.callback_query(F.data.startswith("q:"))
     async def check_order(callback: CallbackQuery) -> None:
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         await callback.answer(copy(language, "កំពុងពិនិត្យការទូទាត់…", "Checking payment…"))
         order_id = callback.data[2:]
         try:
@@ -576,7 +606,7 @@ def register_handlers(
     @router.callback_query(F.data == "history")
     async def history(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         orders = await store.order_history(callback.from_user.id)
         if not orders:
             text = copy(language, "អ្នកមិនទាន់មានការបញ្ជាទិញទេ។", "You have no orders yet.")
@@ -597,7 +627,7 @@ def register_handlers(
     @router.callback_query(F.data == "support")
     async def support(callback: CallbackQuery) -> None:
         await callback.answer()
-        language = await store.user_language(callback.from_user.id)
+        language = await safe_user_language(store, callback.from_user.id)
         if settings.support_username:
             rows = [
                 [

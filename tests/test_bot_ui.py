@@ -1,6 +1,8 @@
+import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
-from app.bot import description_preview, quantity_limit, welcome_text
+from app.bot import description_preview, quantity_limit, safe_user_language, welcome_text
 
 
 def test_welcome_text_escapes_profile_data_and_handles_missing_username():
@@ -52,3 +54,11 @@ def test_product_description_is_limited_to_three_lines():
     preview = description_preview("First\nSecond\nThird\nFourth", "en")
 
     assert preview.splitlines() == ["First", "Second", "• ..."]
+
+
+def test_user_language_falls_back_to_khmer_when_preferences_are_unavailable():
+    store = SimpleNamespace(user_language=AsyncMock(side_effect=RuntimeError("users table missing")))
+
+    language = asyncio.run(safe_user_language(store, 12345))
+
+    assert language == "km"
