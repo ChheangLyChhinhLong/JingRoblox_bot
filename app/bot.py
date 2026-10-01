@@ -748,6 +748,7 @@ def register_handlers(
         stock = await store.available_stock(product_data["id"])
         rows = [
             [InlineKeyboardButton(text="✏️ កែ Package", callback_data=f"admin:product-edit:{product_data['id']}")],
+            [InlineKeyboardButton(text="➕ បន្ថែមស្តុក", callback_data=f"admin:stock-add:{product_data['id']}")],
             [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data=f"au:{product_data['id']}")],
             [InlineKeyboardButton(text="🗑 បិទ Package", callback_data=f"admin:product-disable:{product_data['id']}")],
             back_button(f"ac:{product_data['category_id']}"),
@@ -845,9 +846,22 @@ def register_handlers(
 
     @router.callback_query(F.data == "admin:cancel-input")
     async def cancel_admin_input(callback: CallbackQuery) -> None:
-        pending_admin_input.pop(callback.from_user.id, None)
+        pending = pending_admin_input.pop(callback.from_user.id, None)
         await callback.answer("បានបោះបង់")
-        await callback.message.edit_text("បានបោះបង់។", reply_markup=keyboard([back_button("admin:catalogs")]))
+        target = f"ap:{pending[1]}" if pending and pending[0] == "stock_add" else "admin:catalogs"
+        await callback.message.edit_text("បានបោះបង់។", reply_markup=keyboard([back_button(target)]))
+
+    @router.callback_query(F.data.startswith("admin:stock-add:"))
+    async def add_stock_prompt(callback: CallbackQuery) -> None:
+        await callback.answer()
+        if callback.from_user.id not in settings.admin_ids:
+            return
+        product_id = callback.data.removeprefix("admin:stock-add:")
+        pending_admin_input[callback.from_user.id] = ("stock_add", product_id)
+        await callback.message.answer(
+            "ផ្ញើ Code ឬ username:password មួយក្នុងមួយបន្ទាត់ (អាចបញ្ចូល 1 ឬច្រើន)៖",
+            reply_markup=keyboard([back_button("admin:cancel-input")]),
+        )
 
     @router.message(F.text)
     async def receive_admin_input(message: Message) -> None:
@@ -885,6 +899,11 @@ def register_handlers(
                     await store.client.table("products").insert(values).execute()
                 else:
                     await store.client.table("products").update(values).eq("id", target_id).execute()
+            elif action == "stock_add":
+                credentials = [line.strip() for line in text.splitlines() if line.strip()]
+                if not credentials:
+                    raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
+                added = await store.import_stock(target_id, credentials, settings.stock_encryption_key)
             else:
                 return
         except (InvalidOperation, ValueError) as exc:
@@ -898,6 +917,12 @@ def register_handlers(
             await message.answer("មិនអាចរក្សាទុកបានទេ។ សូមព្យាយាមម្ដងទៀត។")
             return
         pending_admin_input.pop(message.from_user.id, None)
+        if action == "stock_add":
+            await message.answer(
+                f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។",
+                reply_markup=keyboard([back_button(f"ap:{target_id}")]),
+            )
+            return
         target = "admin:catalogs" if action.startswith("category") else "admin"
         await message.answer("បានរក្សាទុកដោយជោគជ័យ។", reply_markup=keyboard([back_button(target)]))
 
