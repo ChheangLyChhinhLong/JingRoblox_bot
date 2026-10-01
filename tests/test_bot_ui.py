@@ -6,6 +6,7 @@ from app.bot import (
     deliver_order,
     description_preview,
     menu,
+    payment_caption,
     payment_keyboard,
     parse_product_caption,
     parse_stock_add,
@@ -86,6 +87,7 @@ def test_parse_stock_add_accepts_comma_and_newline_separated_codes():
 
 def test_parse_stock_add_ignores_other_text_and_rejects_missing_credentials():
     assert parse_stock_add("hello there") is None
+    assert parse_stock_add("/addstock product-123 | code1") is None
     try:
         parse_stock_add("addstock product-123 |  ")
     except ValueError as exc:
@@ -102,16 +104,28 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 
 
 def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
-    markup = payment_keyboard(
-        "order-123",
-        "abamobilebank://ababank.com?type=payway&qrcode=encoded",
-        "km",
-    )
+    deeplink = "abamobilebank://ababank.com?type=payway&qrcode=KHQR%2Bpayload%2F123%3D"
+    markup = payment_keyboard("order-123", deeplink)
 
     assert len(markup.inline_keyboard) == 2
-    assert markup.inline_keyboard[0][0].text == "🔗 បើក ABA Mobile"
-    assert markup.inline_keyboard[0][0].url == "https://shop.example.com/aba/order-123"
-    assert markup.inline_keyboard[1][0].callback_data == "q:order-123"
+    assert markup.inline_keyboard[0][0].text == "🏦 បើកក្នុង ABA Mobile"
+    assert markup.inline_keyboard[0][0].url == deeplink
+    assert markup.inline_keyboard[1][0].text == "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ"
+    assert markup.inline_keyboard[1][0].callback_data == "check_payment_order-123"
+
+
+def test_payment_caption_matches_requested_html_layout_and_escapes_data():
+    caption = payment_caption("Gold <Package>", 2, "10.5", "txn-123")
+
+    assert caption == (
+        "💳 <b>Pay $10.50</b>\n\n"
+        "🛍 <b>Product:</b> Gold &lt;Package&gt; x2\n"
+        "💰 <b>Total:</b> $10.50\n"
+        "🟢 <b>Remaining to pay:</b> $10.50\n"
+        "🏷 <b>Ref:</b> <code>txn-123</code>\n"
+        "⏱ <b>Scan KHQR to complete payment.</b>\n"
+        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+    )
 
 
 def test_product_image_update_targets_product_and_stores_cloudinary_url():

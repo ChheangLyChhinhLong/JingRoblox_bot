@@ -13,7 +13,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
-from app.payments import KHPayClient, aba_mobile_deeplink, aba_mobile_redirect_url
+from app.payments import KHPayClient, aba_mobile_deeplink
 from app.security import decrypt_stock
 from app.store import Store
 
@@ -46,6 +46,19 @@ async def edit_text_message(
 
 def money(amount: Any) -> str:
     return f"${Decimal(str(amount)):.2f}"
+
+
+def payment_caption(product_name: str, quantity: int, amount: Any, transaction_ref: str) -> str:
+    total = f"{Decimal(str(amount)):.2f}"
+    return (
+        f"💳 <b>Pay ${total}</b>\n\n"
+        f"🛍 <b>Product:</b> {html.escape(product_name)} x{quantity}\n"
+        f"💰 <b>Total:</b> ${total}\n"
+        f"🟢 <b>Remaining to pay:</b> ${total}\n"
+        f"🏷 <b>Ref:</b> <code>{html.escape(transaction_ref)}</code>\n"
+        "⏱ <b>Scan KHQR to complete payment.</b>\n"
+        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+    )
 
 
 def copy(language: str, khmer: str, english: str) -> str:
@@ -91,6 +104,8 @@ def quantity_limit(stock: int) -> int:
 
 
 def parse_product_caption(caption: str) -> tuple[str, str, str]:
+    if caption.lstrip().startswith("/"):
+        raise ValueError("សូមផ្ញើ Caption ដោយមិនដាក់សញ្ញា / នៅខាងមុខ។")
     fields = [field.strip() for field in caption.split("|", 2)]
     if len(fields) != 3 or not fields[0] or not fields[1]:
         raise ValueError("សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។")
@@ -212,28 +227,14 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
 
 def payment_keyboard(
     order_id: str,
-    open_url: str | None,
-    language: str,
+    deeplink: str,
 ) -> InlineKeyboardMarkup:
-    rows = []
-    if open_url:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=copy(language, "🔗 បើក ABA Mobile", "🔗 Open ABA Mobile"),
-                    url=open_url,
-                )
-            ]
-        )
-    rows.append(
+    return keyboard(
         [
-            InlineKeyboardButton(
-                text=copy(language, "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", "✅ I paid · Check"),
-                callback_data=f"q:{order_id}",
-            )
+            [InlineKeyboardButton(text="🏦 បើកក្នុង ABA Mobile", url=deeplink)],
+            [InlineKeyboardButton(text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", callback_data=f"check_payment_{order_id}")],
         ]
     )
-    return keyboard(rows)
 
 
 async def safe_user_language(store: Store, telegram_id: int) -> str:
@@ -563,8 +564,9 @@ def register_handlers(
         _, product_id, quantity_text = callback.data.split(":")
         order = None
         try:
-            if not settings.app_base_url:
-                raise RuntimeError("PUBLIC_BASE_URL or an HTTPS KHPAY_WEBHOOK_URL is required")
+            product_data = await store.product(product_id)
+            if not product_data:
+                raise RuntimeError("Product is no longer available")
             order = await store.reserve_order(callback.from_user.id, product_id, int(quantity_text))
             payment = await payments.create_payment(
                 str(order["total"]),
@@ -572,7 +574,6 @@ def register_handlers(
                 callback.from_user.id,
             )
             aba_deeplink = aba_mobile_deeplink(payment["qr_string"])
-            open_url = aba_mobile_redirect_url(settings.app_base_url or "", str(order["id"]))
             await store.set_payment(order["id"], payment["transaction_id"], aba_deeplink)
         except Exception:
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
@@ -583,19 +584,18 @@ def register_handlers(
                 reply_markup=menu(settings, callback.from_user.id, language),
             )
             return
-        caption = copy(
-            language,
-            f"ការបញ្ជាទិញ <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
-            "ស្កេន KHQR ឬចុចប៊ូតុង ABA Mobile ដើម្បីបង់ប្រាក់។ បន្ទាប់មកចុចពិនិត្យការទូទាត់។",
-            f"Order <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
-            "Scan the KHQR or open ABA Mobile to pay, then tap Check payment.",
+        caption = payment_caption(
+            str(product_data["name"]),
+            int(quantity_text),
+            order["total"],
+            str(payment["transaction_id"]),
         )
         payment_message = await bot.send_photo(
             callback.from_user.id,
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
-            reply_markup=payment_keyboard(str(order["id"]), open_url, language),
+            reply_markup=payment_keyboard(str(order["id"]), aba_deeplink),
         )
         payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
         if payment_status == "paid":
@@ -642,11 +642,11 @@ def register_handlers(
             reply_markup=keyboard([back_button("home", language)]),
         )
 
-    @router.callback_query(F.data.startswith("q:"))
+    @router.callback_query(F.data.startswith("check_payment_"))
     async def check_order(callback: CallbackQuery) -> None:
         language = await safe_user_language(store, callback.from_user.id)
         await callback.answer(copy(language, "កំពុងពិនិត្យការទូទាត់…", "Checking payment…"))
-        order_id = callback.data[2:]
+        order_id = callback.data.removeprefix("check_payment_")
         try:
             result = await (
                 store.client.table("orders")
@@ -908,7 +908,7 @@ def register_handlers(
         category_id = callback.data.removeprefix("admin:product-add:")
         pending_admin_input[callback.from_user.id] = ("product_add", category_id)
         await callback.message.edit_text(
-            "ផ្ញើរូបភាពជាមួយ Caption <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code> ឬផ្ញើតែអត្ថបទក្នុងទម្រង់ដដែល។",
+            "ផ្ញើរូបភាពជាមួយ Caption <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code> ដើម្បីបង្កើត Package ថ្មី។",
             parse_mode="HTML",
             reply_markup=keyboard([back_button("admin:cancel-input")]),
         )
@@ -1018,6 +1018,8 @@ def register_handlers(
         if not message.from_user:
             return
         text = (message.text or "").strip()
+        if text.startswith("/"):
+            return
         if message.from_user.id in settings.admin_ids:
             try:
                 stock_add = parse_stock_add(text)
@@ -1069,7 +1071,9 @@ def register_handlers(
                     await store.client.table("categories").insert(values).execute()
                 else:
                     await store.client.table("categories").update(values).eq("id", target_id).execute()
-            elif action in {"product_add", "product_edit"}:
+            elif action == "product_add":
+                raise ValueError("សូមផ្ញើរូបភាពជាមួយ Caption ដើម្បីបង្កើត Package ថ្មី។")
+            elif action == "product_edit":
                 fields = [part.strip() for part in text.split("|", 2)]
                 if len(fields) != 3:
                     raise ValueError("សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។")
@@ -1081,11 +1085,7 @@ def register_handlers(
                 if not name or price <= 0:
                     raise ValueError("ឈ្មោះ និងតម្លៃត្រូវតែត្រឹមត្រូវ ហើយតម្លៃត្រូវធំជាង 0។")
                 values = {"name": name, "price": str(price), "description": description}
-                if action == "product_add":
-                    values["category_id"] = target_id
-                    await store.client.table("products").insert(values).execute()
-                else:
-                    await store.client.table("products").update(values).eq("id", target_id).execute()
+                await store.client.table("products").update(values).eq("id", target_id).execute()
             elif action == "stock_add":
                 credentials = [line.strip() for line in text.splitlines() if line.strip()]
                 if not credentials:
