@@ -21,6 +21,7 @@ from app.bot import (
     upload_product_image,
     welcome_text,
 )
+import app.bot as bot_module
 from app.security import encrypt_stock, stock_fingerprint
 from app.store import Store
 
@@ -48,8 +49,10 @@ def test_english_welcome_shows_account_details():
 
 def test_start_welcome_sends_menu_and_saves_profile():
     async def run_test():
+        bot_module.welcome_message_ids.clear()
         user = SimpleNamespace(id=12345, first_name="Jing", username="jing")
-        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+        sent_message = SimpleNamespace(message_id=789)
+        message = SimpleNamespace(from_user=user, answer=AsyncMock(return_value=sent_message), bot=SimpleNamespace())
         store = SimpleNamespace(
             user_language=AsyncMock(return_value="km"),
             upsert_user=AsyncMock(),
@@ -65,6 +68,7 @@ def test_start_welcome_sends_menu_and_saves_profile():
         sent_markup = message.answer.call_args.kwargs["reply_markup"]
         assert "សូមស្វាគមន៍ Jing" in sent_text
         assert sent_markup.inline_keyboard[0][0].callback_data == "shop"
+        assert bot_module.welcome_message_ids[user.id] == sent_message.message_id
 
     asyncio.run(run_test())
 

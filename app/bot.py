@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 pending_stock_upload: dict[int, str] = {}
 pending_admin_input: dict[int, tuple[str, str | None]] = {}
+welcome_message_ids: dict[int, int] = {}
 
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
@@ -350,11 +351,18 @@ async def send_welcome(message: Message, store: Store, settings: Settings) -> No
     except Exception:
         logger.exception("Could not load categories for user %s", user.id)
         categories = []
-    await message.answer(
+    previous_message_id = welcome_message_ids.get(user.id)
+    if previous_message_id:
+        try:
+            await message.bot.delete_message(chat_id=user.id, message_id=previous_message_id)
+        except TelegramBadRequest:
+            logger.debug("Could not delete previous welcome message %s", previous_message_id)
+    welcome_message = await message.answer(
         welcome_text(user, language, categories),
         parse_mode="HTML",
         reply_markup=menu(settings, user.id, language),
     )
+    welcome_message_ids[user.id] = welcome_message.message_id
 
 
 async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: str, chat_id: int) -> None:
@@ -1167,7 +1175,6 @@ def register_handlers(
             else None
         )
         if not pending:
-            await send_welcome(message, store, settings)
             return
         action, target_id = pending
         try:
