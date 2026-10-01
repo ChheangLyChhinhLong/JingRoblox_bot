@@ -35,15 +35,21 @@ async def edit_text_message(
     *,
     parse_mode: str | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
-) -> None:
+) -> Message:
     if message.text is None:
         try:
             await message.delete()
         except TelegramBadRequest:
             logger.debug("Could not delete old photo message %s", message.message_id)
-        await message.answer(text, parse_mode=parse_mode, reply_markup=reply_markup)
-        return
-    await message.edit_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        return await message.answer(text, parse_mode=parse_mode, reply_markup=reply_markup)
+    return await message.edit_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+
+
+async def delete_replaced_message(message: Message) -> None:
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        logger.debug("Could not delete replaced message %s", message.message_id)
 
 
 def money(amount: Any) -> str:
@@ -417,12 +423,13 @@ def register_handlers(
         await callback.answer()
         language = await safe_user_language(store, callback.from_user.id)
         categories = await store.categories()
-        await edit_text_message(
+        welcome_message = await edit_text_message(
             callback.message,
             welcome_text(callback.from_user, language, categories),
             parse_mode="HTML",
             reply_markup=menu(settings, callback.from_user.id, language),
         )
+        welcome_message_ids[callback.from_user.id] = welcome_message.message_id
 
     @router.callback_query(F.data == "language")
     async def language_menu(callback: CallbackQuery) -> None:
@@ -475,14 +482,16 @@ def register_handlers(
             settings_data = await store.bot_settings(("how_to_buy_video_url", "how_to_buy_caption"))
         except Exception:
             logger.exception("Could not load tutorial settings")
-            await callback.message.answer(
+            await edit_text_message(
+                callback.message,
                 copy(language, "មិនអាចទាញយកវីដេអូណែនាំបានទេ។", "Could not load the tutorial video."),
                 reply_markup=back_to_menu,
             )
             return
         video = settings_data.get("how_to_buy_video_url")
         if not video:
-            await callback.message.answer(
+            await edit_text_message(
+                callback.message,
                 copy(language, "មិនទាន់មានវីដេអូណែនាំទេ។", "The tutorial video is not configured yet."),
                 reply_markup=back_to_menu,
             )
@@ -493,6 +502,7 @@ def register_handlers(
             caption=caption or None,
             reply_markup=back_to_menu,
         )
+        await delete_replaced_message(callback.message)
 
     @router.callback_query(F.data == "shop")
     async def shop(callback: CallbackQuery) -> None:
@@ -706,7 +716,8 @@ def register_handlers(
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
             if order:
                 await store.release_order(str(order["id"]))
-            await callback.message.answer(
+            await edit_text_message(
+                callback.message,
                 copy(language, "មិនអាចបង្កើតការទូទាត់បានទេ។ សូមព្យាយាមម្ដងទៀត។", "Could not create payment. Please try again."),
                 reply_markup=menu(settings, callback.from_user.id, language),
             )
@@ -724,6 +735,7 @@ def register_handlers(
             parse_mode="HTML",
             reply_markup=payment_keyboard(str(order["id"]), open_url),
         )
+        await delete_replaced_message(callback.message)
         await track_payment_message(bot, store, order["id"], payment_message.message_id)
 
     @router.callback_query(F.data.startswith("cancel:"))

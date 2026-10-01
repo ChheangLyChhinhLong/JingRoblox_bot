@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 from app.bot import (
     admin_category_actions,
     admin_product_actions,
+    delete_replaced_message,
     deliver_order,
     description_preview,
     edit_text_message,
@@ -172,6 +173,17 @@ def test_edit_text_message_replaces_video_message_with_text_message():
         message.delete.assert_awaited_once_with()
         message.answer.assert_awaited_once_with("Welcome", parse_mode="HTML", reply_markup=None)
         message.edit_text.assert_not_awaited()
+
+    asyncio.run(run_test())
+
+
+def test_delete_replaced_message_removes_previous_screen():
+    async def run_test():
+        message = SimpleNamespace(message_id=123, delete=AsyncMock())
+
+        await delete_replaced_message(message)
+
+        message.delete.assert_awaited_once_with()
 
     asyncio.run(run_test())
 
