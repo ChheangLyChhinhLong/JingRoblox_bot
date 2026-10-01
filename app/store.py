@@ -79,13 +79,24 @@ class Store:
     async def product(self, product_id: str) -> dict[str, Any] | None:
         result = await (
             self.client.table("products")
-            .select("id,category_id,name,description,price")
+            .select("id,category_id,name,description,price,image_url")
             .eq("id", product_id)
             .eq("active", True)
             .maybe_single()
             .execute()
         )
         return result.data
+
+    async def update_product_image(self, product_id: str, image_url: str) -> bool:
+        result = await (
+            self.client.table("products")
+            .update({"image_url": image_url})
+            .eq("id", product_id)
+            .select("id")
+            .maybe_single()
+            .execute()
+        )
+        return bool(result.data)
 
     async def available_stock(self, product_id: str) -> int:
         result = await self.client.rpc(

@@ -10,7 +10,7 @@ import qrcode
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
 from app.payments import KHPayClient, aba_mobile_deeplink
@@ -25,6 +25,23 @@ pending_admin_input: dict[int, tuple[str, str | None]] = {}
 
 def keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def edit_text_message(
+    message: Message,
+    text: str,
+    *,
+    parse_mode: str | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    if message.photo:
+        try:
+            await message.delete()
+        except TelegramBadRequest:
+            logger.debug("Could not delete old photo message %s", message.message_id)
+        await message.answer(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        return
+    await message.edit_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 def money(amount: Any) -> str:
@@ -378,7 +395,7 @@ def register_handlers(
             "───────────────────\n"
             "Choose a catalog below to browse its packages:",
         )
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard(rows))
+        await edit_text_message(callback.message, text, parse_mode="HTML", reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("c:"))
     async def category(callback: CallbackQuery) -> None:
@@ -489,9 +506,29 @@ def register_handlers(
             f"{description}\n"
             "───────────────────"
         )
-        await message.edit_text(
-            text, parse_mode="HTML", reply_markup=keyboard(rows)
-        )
+        markup = keyboard(rows)
+        image_url = product_data.get("image_url")
+        if image_url:
+            if message.photo:
+                await message.edit_media(
+                    media=InputMediaPhoto(media=image_url, caption=text, parse_mode="HTML"),
+                    reply_markup=markup,
+                )
+            else:
+                await message.answer_photo(
+                    photo=image_url,
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=markup,
+                )
+                try:
+                    await message.delete()
+                except TelegramBadRequest:
+                    logger.debug("Could not delete previous product message %s", message.message_id)
+        elif message.photo:
+            await message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+        else:
+            await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
     @router.callback_query(F.data.startswith("qty:"))
     async def change_quantity(callback: CallbackQuery) -> None:
@@ -521,7 +558,8 @@ def register_handlers(
             [InlineKeyboardButton(text="🏦 Bakong", callback_data=f"pay:bakong:{product_id}:{quantity_text}")],
             back_button(f"p:{product_id}", language),
         ]
-        await callback.message.edit_text(
+        await edit_text_message(
+            callback.message,
             copy(language, "ជ្រើសរើសវិធីបង់ប្រាក់៖", "Choose a payment method:"),
             reply_markup=keyboard(rows),
         )
@@ -815,11 +853,36 @@ def register_handlers(
         ]
         await callback.message.edit_text(
             f"📦 <b>{html.escape(product_data['name'])}</b>\n"
+            f"ID: <code>{html.escape(product_data['id'])}</code>\n"
             f"តម្លៃ៖ {money(product_data['price'])}\n"
             f"ស្តុកនៅសល់៖ {stock}\n\n"
             f"{html.escape(product_data.get('description') or '')}",
             parse_mode="HTML",
             reply_markup=keyboard(rows),
+        )
+
+    @router.message(F.photo, F.caption.startswith("/setproductphoto"))
+    async def set_product_photo(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in settings.admin_ids:
+            return
+        parts = (message.caption or "").strip().split(maxsplit=1)
+        command = parts[0].split("@", 1)[0] if parts else ""
+        if command != "/setproductphoto" or len(parts) != 2 or not parts[1].strip():
+            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ ប្រើ /setproductphoto <product_id> ជាមួយរូបភាព។")
+            return
+        product_id = parts[1].strip()
+        try:
+            updated = await store.update_product_image(product_id, message.photo[-1].file_id)
+        except Exception:
+            logger.exception("Could not update product image %s", product_id)
+            await message.answer("មិនអាចធ្វើបច្ចុប្បន្នភាពរូបភាព Package បានទេ។")
+            return
+        if not updated:
+            await message.answer(f"រកមិនឃើញ Package ID {html.escape(product_id)} ទេ។")
+            return
+        await message.answer(
+            f"✅ រូបភាព Package ID <code>{html.escape(product_id)}</code> ត្រូវបានផ្លាស់ប្តូរជោគជ័យ!",
+            parse_mode="HTML",
         )
 
     @router.callback_query(F.data.startswith("admin:product-add:"))

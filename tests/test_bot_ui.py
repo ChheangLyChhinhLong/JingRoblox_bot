@@ -1,9 +1,10 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from app.bot import deliver_order, description_preview, menu, payment_keyboard, quantity_limit, safe_user_language, welcome_text
 from app.security import encrypt_stock
+from app.store import Store
 
 
 def test_welcome_text_escapes_profile_data_and_handles_missing_username():
@@ -76,6 +77,28 @@ def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
     assert markup.inline_keyboard[0][0].text == "🔗 បើក ABA Mobile"
     assert markup.inline_keyboard[0][0].url.startswith("abamobilebank://")
     assert markup.inline_keyboard[1][0].callback_data == "q:order-123"
+
+
+def test_product_image_update_targets_product_and_stores_file_id():
+    async def run_test():
+        product_id = "product-123"
+        file_id = "telegram-photo-file-id"
+        query = Mock()
+        query.update.return_value = query
+        query.eq.return_value = query
+        query.select.return_value = query
+        query.maybe_single.return_value = query
+        query.execute = AsyncMock(return_value=SimpleNamespace(data={"id": product_id}))
+        client = SimpleNamespace(table=Mock(return_value=query))
+
+        updated = await Store(client).update_product_image(product_id, file_id)
+
+        assert updated
+        client.table.assert_called_once_with("products")
+        query.update.assert_called_once_with({"image_url": file_id})
+        query.eq.assert_called_once_with("id", product_id)
+
+    asyncio.run(run_test())
 
 
 def test_delivery_deletes_payment_qr_before_fulfilling_and_sending_credentials():
