@@ -45,7 +45,18 @@ create table if not exists public.orders (
     delivered_at timestamptz
 );
 
-alter table public.orders add column if not exists payment_message_id bigint;
+alter table public.orders add column if not exists message_id bigint;
+
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'orders' and column_name = 'payment_message_id'
+    ) then
+        execute 'update public.orders set message_id = payment_message_id where message_id is null and payment_message_id is not null';
+    end if;
+end;
+$$;
 
 create table if not exists public.stock_items (
     id uuid primary key default gen_random_uuid(),

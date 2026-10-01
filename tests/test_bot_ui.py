@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from app.bot import deliver_order, description_preview, menu, quantity_limit, safe_user_language, welcome_text
+from app.bot import deliver_order, description_preview, menu, payment_keyboard, quantity_limit, safe_user_language, welcome_text
 from app.security import encrypt_stock
 
 
@@ -64,6 +64,20 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
     assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
 
 
+def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
+    markup = payment_keyboard(
+        "order-123",
+        "abamobilebank://ababank.com?type=payway&qrcode=encoded",
+        "qr",
+        "km",
+    )
+
+    assert len(markup.inline_keyboard) == 2
+    assert markup.inline_keyboard[0][0].text == "🔗 បើក ABA Mobile"
+    assert markup.inline_keyboard[0][0].url.startswith("abamobilebank://")
+    assert markup.inline_keyboard[1][0].callback_data == "q:order-123"
+
+
 def test_delivery_deletes_payment_qr_before_fulfilling_and_sending_credentials():
     async def run_test():
         events = []
@@ -90,7 +104,7 @@ def test_delivery_deletes_payment_qr_before_fulfilling_and_sending_credentials()
             send_message=AsyncMock(side_effect=send_message),
         )
         store = SimpleNamespace(
-            payment_message=AsyncMock(return_value={"chat_id": 123, "payment_message_id": 456}),
+            payment_message=AsyncMock(return_value={"chat_id": 123, "message_id": 456}),
             clear_payment_message=AsyncMock(side_effect=clear_payment_message),
             fulfill_order=AsyncMock(side_effect=fulfill_order),
             user_language=AsyncMock(return_value="en"),

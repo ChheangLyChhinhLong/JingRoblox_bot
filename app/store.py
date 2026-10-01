@@ -109,7 +109,7 @@ class Store:
     async def set_payment_message(self, order_id: str, message_id: int) -> str | None:
         result = await (
             self.client.table("orders")
-            .update({"payment_message_id": message_id})
+            .update({"message_id": message_id})
             .eq("id", order_id)
             .select("status")
             .maybe_single()
@@ -120,7 +120,7 @@ class Store:
     async def payment_message(self, order_id: str) -> dict[str, Any] | None:
         result = await (
             self.client.table("orders")
-            .select("chat_id,payment_message_id")
+            .select("chat_id,message_id")
             .eq("id", order_id)
             .maybe_single()
             .execute()
@@ -130,7 +130,7 @@ class Store:
     async def clear_payment_message(self, order_id: str) -> None:
         await (
             self.client.table("orders")
-            .update({"payment_message_id": None})
+            .update({"message_id": None})
             .eq("id", order_id)
             .execute()
         )

@@ -146,6 +146,35 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
     ]
 
 
+def payment_keyboard(
+    order_id: str,
+    open_url: str | None,
+    method: str,
+    language: str,
+) -> InlineKeyboardMarkup:
+    provider_label = "ABA Mobile" if method == "qr" else "Bakong"
+    open_label = "🔗 បើក ABA Mobile" if method == "qr" else "🔗 បើក Bakong"
+    rows = []
+    if open_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=copy(language, open_label, f"🔗 Open {provider_label}"),
+                    url=open_url,
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=copy(language, "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", "✅ I paid · Check"),
+                callback_data=f"q:{order_id}",
+            )
+        ]
+    )
+    return keyboard(rows)
+
+
 async def safe_user_language(store: Store, telegram_id: int) -> str:
     try:
         return await store.user_language(telegram_id) or "km"
@@ -178,12 +207,12 @@ async def deliver_order(bot: Bot, store: Store, settings: Settings, order_id: st
 
 async def delete_payment_message(bot: Bot, store: Store, order_id: str) -> None:
     payment_message = await store.payment_message(order_id)
-    if not payment_message or not payment_message.get("payment_message_id"):
+    if not payment_message or not payment_message.get("message_id"):
         return
     try:
         await bot.delete_message(
             chat_id=int(payment_message["chat_id"]),
-            message_id=int(payment_message["payment_message_id"]),
+            message_id=int(payment_message["message_id"]),
         )
     except TelegramBadRequest as exc:
         if "message to delete not found" not in str(exc).lower():
@@ -528,29 +557,6 @@ def register_handlers(
                 reply_markup=menu(settings, callback.from_user.id, language),
             )
             return
-        rows = []
-        if open_url:
-            rows.append(
-                [
-                InlineKeyboardButton(
-                    text=copy(
-                        language,
-                        "🔗 បើក ABA Mobile" if method == "qr" else "🔗 បើក Bakong",
-                        f"🔗 Open {provider_label}",
-                    ),
-                    url=open_url,
-                )
-                ]
-            )
-        rows.extend([
-            [
-                InlineKeyboardButton(
-                    text=copy(language, "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", "✅ I paid · Check"),
-                    callback_data=f"q:{order['id']}",
-                )
-            ],
-            [InlineKeyboardButton(text=copy(language, "❌ លុបចោល", "❌ Cancel"), callback_data=f"cancel:{order['id']}")],
-        ])
         caption = copy(
             language,
             f"ការបញ្ជាទិញ <code>{html.escape(str(order['id']))}</code> · {money(order['total'])}\n"
@@ -563,7 +569,7 @@ def register_handlers(
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
-            reply_markup=keyboard(rows),
+            reply_markup=payment_keyboard(str(order["id"]), open_url, method, language),
         )
         payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
         if payment_status == "paid":
