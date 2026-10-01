@@ -19,6 +19,17 @@ class Store:
         )
         return result.data
 
+    async def category(self, category_id: str) -> dict[str, Any] | None:
+        result = await (
+            self.client.table("categories")
+            .select("id,name,description")
+            .eq("id", category_id)
+            .eq("active", True)
+            .maybe_single()
+            .execute()
+        )
+        return result.data
+
     async def products(self, category_id: str) -> list[dict[str, Any]]:
         result = await (
             self.client.table("products")
@@ -40,6 +51,12 @@ class Store:
             .execute()
         )
         return result.data
+
+    async def available_stock(self, product_id: str) -> int:
+        result = await self.client.rpc(
+            "available_stock_count", {"p_product_id": product_id}
+        ).execute()
+        return int(result.data or 0)
 
     async def reserve_order(self, chat_id: int, product_id: str, quantity: int) -> dict[str, Any]:
         result = await self.client.rpc(

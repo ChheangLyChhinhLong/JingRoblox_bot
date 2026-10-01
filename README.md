@@ -16,10 +16,11 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 
 ## Store behavior
 
-- Customers navigate categories, products, quantity, payment, order history, and support using inline buttons.
+- Customers navigate categories, products, quantity, payment, order history, and support using inline buttons. Product listings show current available stock, and quantity selection is limited to available stock and three items per order.
 - New orders atomically reserve stock in Supabase. If checkout creation fails or KHPAY reports an expired/failed payment, the reservation is released.
 - The bot checks KHPAY on demand and in the background. It delivers credentials only after the authenticated KHPAY status endpoint reports `paid`; it never trusts a browser redirect.
-- Admin IDs can view stock and sales totals, and import inventory from a `.txt` attachment in the bot. Catalog/category changes are managed in Supabase; the command-line importer is also available.
+- Admins can manage catalogs and packages from the bot's button-based admin panel: add or edit a category/package, deactivate entries, import stock from a `.txt` attachment, and view sales totals. Category input uses `name | description`; package input uses `name | price | description`. Stock files accept one redeem code or `username:password` per line. These workflows do not use admin slash commands; the standard Telegram `/start` entry point remains available.
+- Catalogs and packages can also be managed directly in Supabase. The command-line importer remains available.
 - This starter uses KHPAY's ABA `/qr/generate` endpoint and USD. The KHPAY account must have an active payout link.
 
 ## Operations and security
