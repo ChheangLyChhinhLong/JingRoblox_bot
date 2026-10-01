@@ -18,6 +18,10 @@ services:
         sync: false
       - key: KHPAY_BASE_URL
         value: https://khpay.site/api/v1
+      - key: KHPAY_WEBHOOK_SECRET
+        sync: false
+      - key: KHPAY_WEBHOOK_URL
+        sync: false
       - key: STOCK_ENCRYPTION_KEY
         sync: false
       - key: SUPPORT_USERNAME

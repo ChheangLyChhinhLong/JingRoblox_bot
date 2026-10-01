@@ -11,7 +11,8 @@ Button-driven Telegram storefront for digital accounts (`username:password`). It
 5. Install dependencies with `pip install -r requirements.txt` and start locally with `python -m app.main`.
 6. In Supabase, insert categories and products. Copy a product UUID and import stock using `python -m scripts.import_stock PRODUCT_UUID stock.txt`. Each line in the file must be `username:password`. Set the same environment variables locally before running the importer.
 7. In Render, create a Web Service from this repository. The included [`render.yaml`](render.yaml) sets the start command and `/health` check; add all `.env.example` secrets in the Render Environment tab.
-8. In UptimeRobot, create an HTTP(s) monitor for `https://YOUR-RENDER-SERVICE.onrender.com/health`, with a 5-minute interval.
+8. After Render deploys, set `KHPAY_WEBHOOK_URL` to `https://YOUR-RENDER-SERVICE.onrender.com/webhook/khpay` in Render and redeploy. Add the same URL in KHPAY Dashboard → Settings → Webhooks, enable paid/failed/expired events, then copy the generated webhook secret into Render as `KHPAY_WEBHOOK_SECRET` and redeploy. The endpoint verifies the raw-body HMAC and confirms payment status and amount through KHPAY before delivery.
+9. In UptimeRobot, create an HTTP(s) monitor for `https://YOUR-RENDER-SERVICE.onrender.com/health`, with a 5-minute interval.
 
 ## Store behavior
 

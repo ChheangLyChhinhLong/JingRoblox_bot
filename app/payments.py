@@ -1,10 +1,21 @@
+import hashlib
+import hmac
 from typing import Any
 
 import httpx
 
 
+def verify_webhook_signature(raw_body: bytes, signature: str, secret: str) -> bool:
+    if not signature or not secret:
+        return False
+    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    expected = f"sha256={digest}" if signature.startswith("sha256=") else digest
+    return hmac.compare_digest(expected, signature)
+
+
 class KHPayClient:
-    def __init__(self, api_key: str, base_url: str) -> None:
+    def __init__(self, api_key: str, base_url: str, webhook_url: str = "") -> None:
+        self._webhook_url = webhook_url
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -12,10 +23,17 @@ class KHPayClient:
         )
 
     async def create_payment(self, amount: str, order_id: str) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "amount": amount,
+            "currency": "USD",
+            "note": f"Telegram order {order_id}",
+        }
+        if self._webhook_url:
+            body["callback_url"] = self._webhook_url
         response = await self._client.post(
             "/qr/generate",
             headers={"Idempotency-Key": order_id},
-            json={"amount": amount, "currency": "USD", "note": f"Telegram order {order_id}"},
+            json=body,
         )
         payload = response.json()
         if response.is_error or not payload.get("success"):

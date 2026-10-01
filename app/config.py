@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     khpay_api_key: str
     khpay_base_url: str = "https://khpay.site/api/v1"
+    khpay_webhook_secret: str = ""
+    khpay_webhook_url: str = ""
     stock_encryption_key: str
     support_username: str = ""
     poll_interval_seconds: int = 20

@@ -54,6 +54,16 @@ class Store:
             {"p_order_id": order_id, "p_transaction_id": transaction_id, "p_payment_url": payment_url},
         ).execute()
 
+    async def order_by_transaction(self, transaction_id: str) -> dict[str, Any] | None:
+        result = await (
+            self.client.table("orders")
+            .select("id,chat_id,total,status")
+            .eq("transaction_id", transaction_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data
+
     async def release_order(self, order_id: str, status: str = "cancelled") -> None:
         await self.client.rpc("release_order", {"p_order_id": order_id, "p_status": status}).execute()
 
