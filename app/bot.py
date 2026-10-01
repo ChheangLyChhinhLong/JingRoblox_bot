@@ -35,7 +35,7 @@ async def edit_text_message(
     parse_mode: str | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
-    if message.photo:
+    if message.text is None:
         try:
             await message.delete()
         except TelegramBadRequest:
@@ -409,7 +409,8 @@ def register_handlers(
         await callback.answer()
         language = await safe_user_language(store, callback.from_user.id)
         categories = await store.categories()
-        await callback.message.edit_text(
+        await edit_text_message(
+            callback.message,
             welcome_text(callback.from_user, language, categories),
             parse_mode="HTML",
             reply_markup=menu(settings, callback.from_user.id, language),

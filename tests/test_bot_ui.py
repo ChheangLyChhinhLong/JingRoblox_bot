@@ -135,6 +135,7 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 def test_edit_text_message_replaces_photo_with_text_message():
     async def run_test():
         message = SimpleNamespace(
+            text=None,
             photo=[object()],
             message_id=456,
             delete=AsyncMock(),
@@ -146,6 +147,26 @@ def test_edit_text_message_replaces_photo_with_text_message():
 
         message.delete.assert_awaited_once_with()
         message.answer.assert_awaited_once_with("Choose a package", parse_mode="HTML", reply_markup=None)
+        message.edit_text.assert_not_awaited()
+
+    asyncio.run(run_test())
+
+
+def test_edit_text_message_replaces_video_message_with_text_message():
+    async def run_test():
+        message = SimpleNamespace(
+            text=None,
+            video=object(),
+            message_id=789,
+            delete=AsyncMock(),
+            answer=AsyncMock(),
+            edit_text=AsyncMock(),
+        )
+
+        await edit_text_message(message, "Welcome", parse_mode="HTML")
+
+        message.delete.assert_awaited_once_with()
+        message.answer.assert_awaited_once_with("Welcome", parse_mode="HTML", reply_markup=None)
         message.edit_text.assert_not_awaited()
 
     asyncio.run(run_test())
