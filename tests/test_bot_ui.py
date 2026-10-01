@@ -172,12 +172,12 @@ def test_admin_package_actions_group_editing_and_stock_controls():
 
 
 def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
-    deeplink = "abamobilebank://ababank.com?type=payway&qrcode=KHQR%2Bpayload%2F123%3D"
-    markup = payment_keyboard("order-123", deeplink)
+    open_url = "https://shop.example.com/aba/order-123"
+    markup = payment_keyboard("order-123", open_url)
 
     assert len(markup.inline_keyboard) == 2
     assert markup.inline_keyboard[0][0].text == "🏦 បើកក្នុង ABA Mobile"
-    assert markup.inline_keyboard[0][0].url == deeplink
+    assert markup.inline_keyboard[0][0].url == open_url
     assert markup.inline_keyboard[1][0].text == "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ"
     assert markup.inline_keyboard[1][0].callback_data == "check_payment_order-123"
 

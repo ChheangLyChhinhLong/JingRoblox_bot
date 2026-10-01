@@ -14,7 +14,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
-from app.payments import KHPayClient, aba_mobile_deeplink
+from app.payments import KHPayClient, aba_mobile_deeplink, aba_mobile_redirect_url
 from app.security import decrypt_stock
 from app.store import Store
 
@@ -254,11 +254,11 @@ def admin_product_actions(product_id: str, category_id: str) -> list[list[Inline
 
 def payment_keyboard(
     order_id: str,
-    deeplink: str,
+    open_url: str,
 ) -> InlineKeyboardMarkup:
     return keyboard(
         [
-            [InlineKeyboardButton(text="🏦 បើកក្នុង ABA Mobile", url=deeplink)],
+            [InlineKeyboardButton(text="🏦 បើកក្នុង ABA Mobile", url=open_url)],
             [InlineKeyboardButton(text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", callback_data=f"check_payment_{order_id}")],
         ]
     )
@@ -685,6 +685,7 @@ def register_handlers(
                 callback.from_user.id,
             )
             aba_deeplink = aba_mobile_deeplink(payment["qr_string"])
+            open_url = aba_mobile_redirect_url(settings.app_base_url or "", str(order["id"]))
             await store.set_payment(order["id"], payment["transaction_id"], aba_deeplink)
         except Exception:
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
@@ -706,7 +707,7 @@ def register_handlers(
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
-            reply_markup=payment_keyboard(str(order["id"]), aba_deeplink),
+            reply_markup=payment_keyboard(str(order["id"]), open_url),
         )
         payment_status = await store.set_payment_message(order["id"], payment_message.message_id)
         if payment_status == "paid":
