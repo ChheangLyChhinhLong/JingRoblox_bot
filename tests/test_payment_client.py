@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 
-from app.payments import KHPayClient, aba_mobile_deeplink
+from app.payments import KHPayClient, aba_mobile_deeplink, aba_mobile_redirect_url
 
 
 def test_qr_payment_uses_qr_endpoint():
@@ -57,4 +57,10 @@ def test_qr_payment_accepts_documented_response_without_md5():
 def test_aba_mobile_deeplink_encodes_raw_qr_string():
     assert aba_mobile_deeplink("KHQR+payload/123=") == (
         "abamobilebank://ababank.com?type=payway&qrcode=KHQR%2Bpayload%2F123%3D"
+    )
+
+
+def test_aba_mobile_redirect_uses_our_https_host():
+    assert aba_mobile_redirect_url("https://shop.example.com/webhook/khpay", "order-123") == (
+        "https://shop.example.com/aba/order-123"
     )

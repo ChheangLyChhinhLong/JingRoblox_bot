@@ -145,6 +145,17 @@ class Store:
             {"p_order_id": order_id, "p_transaction_id": transaction_id, "p_payment_url": payment_url},
         ).execute()
 
+    async def pending_payment_deeplink(self, order_id: str) -> str | None:
+        result = await (
+            self.client.table("orders")
+            .select("payment_url")
+            .eq("id", order_id)
+            .eq("status", "pending")
+            .maybe_single()
+            .execute()
+        )
+        return (result.data or {}).get("payment_url")
+
     async def set_payment_message(self, order_id: str, message_id: int) -> str | None:
         result = await (
             self.client.table("orders")

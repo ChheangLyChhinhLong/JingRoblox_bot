@@ -12,6 +12,13 @@ def aba_mobile_deeplink(qr_string: str) -> str:
     return f"abamobilebank://ababank.com?type=payway&qrcode={quote(qr_string, safe='')}"
 
 
+def aba_mobile_redirect_url(base_url: str, order_id: str) -> str:
+    parsed = httpx.URL(base_url)
+    if parsed.scheme != "https" or not parsed.host:
+        raise ValueError("A public HTTPS app URL is required for the ABA button")
+    return f"{str(parsed.copy_with(path='').copy_with(query=None, fragment=None)).rstrip('/')}/aba/{quote(order_id, safe='')}"
+
+
 def verify_webhook_signature(raw_body: bytes, signature: str, secret: str) -> bool:
     if not signature or not secret:
         return False

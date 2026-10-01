@@ -13,7 +13,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.config import Settings
-from app.payments import KHPayClient, aba_mobile_deeplink
+from app.payments import KHPayClient, aba_mobile_deeplink, aba_mobile_redirect_url
 from app.security import decrypt_stock
 from app.store import Store
 
@@ -563,14 +563,17 @@ def register_handlers(
         _, product_id, quantity_text = callback.data.split(":")
         order = None
         try:
+            if not settings.app_base_url:
+                raise RuntimeError("PUBLIC_BASE_URL or an HTTPS KHPAY_WEBHOOK_URL is required")
             order = await store.reserve_order(callback.from_user.id, product_id, int(quantity_text))
             payment = await payments.create_payment(
                 str(order["total"]),
                 str(order["id"]),
                 callback.from_user.id,
             )
-            open_url = aba_mobile_deeplink(payment["qr_string"])
-            await store.set_payment(order["id"], payment["transaction_id"], open_url)
+            aba_deeplink = aba_mobile_deeplink(payment["qr_string"])
+            open_url = aba_mobile_redirect_url(settings.app_base_url or "", str(order["id"]))
+            await store.set_payment(order["id"], payment["transaction_id"], aba_deeplink)
         except Exception:
             logger.exception("Could not create checkout for Telegram user %s", callback.from_user.id)
             if order:

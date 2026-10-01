@@ -3,10 +3,12 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
+from urllib.parse import parse_qs, urlsplit
 
 import uvicorn
 from aiogram import Bot, Dispatcher
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from supabase import acreate_client
 
 from app.bot import delete_payment_message, deliver_order, reconcile_payments, register_handlers
@@ -46,6 +48,22 @@ app = FastAPI(lifespan=lifespan)
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/aba/{order_id}", include_in_schema=False)
+async def open_aba_mobile(order_id: str, request: Request) -> RedirectResponse:
+    store: Store = request.app.state.store
+    deeplink = await store.pending_payment_deeplink(order_id)
+    parsed = urlsplit(deeplink or "")
+    query = parse_qs(parsed.query)
+    if (
+        parsed.scheme != "abamobilebank"
+        or parsed.netloc != "ababank.com"
+        or query.get("type") != ["payway"]
+        or not query.get("qrcode")
+    ):
+        raise HTTPException(status_code=404, detail="Payment link not found or expired")
+    return RedirectResponse(deeplink, status_code=302)
 
 
 @app.post("/webhook/khpay")

@@ -110,7 +110,7 @@ def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
 
     assert len(markup.inline_keyboard) == 2
     assert markup.inline_keyboard[0][0].text == "🔗 បើក ABA Mobile"
-    assert markup.inline_keyboard[0][0].url.startswith("abamobilebank://")
+    assert markup.inline_keyboard[0][0].url == "https://shop.example.com/aba/order-123"
     assert markup.inline_keyboard[1][0].callback_data == "q:order-123"
 
 
