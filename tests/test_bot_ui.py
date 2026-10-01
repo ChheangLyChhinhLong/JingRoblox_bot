@@ -210,6 +210,26 @@ def test_admin_package_actions_group_editing_and_stock_controls():
     ]
 
 
+def test_admin_actions_are_translated_for_english_users():
+    category_rows = admin_category_actions("category-123", "en")
+    product_rows = admin_product_actions("product-123", "category-123", "en")
+
+    assert [button.text for row in category_rows for button in row] == [
+        "➕ Add package",
+        "✏️ Edit catalog",
+        "🗑 Disable catalog",
+        "⬅️ Back",
+    ]
+    assert [button.text for row in product_rows for button in row] == [
+        "✏️ Edit package",
+        "🗑 Disable package",
+        "➕ Add stock",
+        "➖ Remove stock",
+        "📥 Import stock (.txt)",
+        "⬅️ Back",
+    ]
+
+
 def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
     open_url = "https://shop.example.com/aba/order-123"
     markup = payment_keyboard("order-123", open_url)
@@ -221,8 +241,17 @@ def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
     assert markup.inline_keyboard[1][0].callback_data == "check_payment_order-123"
 
 
+def test_khqr_payment_keyboard_supports_english():
+    markup = payment_keyboard("order-123", "https://shop.example.com/aba/order-123", "en")
+
+    assert [row[0].text for row in markup.inline_keyboard] == [
+        "🏦 Open in ABA Mobile",
+        "✅ I have paid · Check",
+    ]
+
+
 def test_payment_caption_matches_requested_html_layout_and_escapes_data():
-    caption = payment_caption("Gold <Package>", 2, "10.5", "txn-123")
+    caption = payment_caption("Gold <Package>", 2, "10.5", "txn-123", "en")
 
     assert caption == (
         "💳 <b>Pay $10.50</b>\n\n"
@@ -233,6 +262,15 @@ def test_payment_caption_matches_requested_html_layout_and_escapes_data():
         "⏱ <b>Scan KHQR to complete payment.</b>\n"
         "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
     )
+
+
+def test_payment_caption_supports_khmer():
+    caption = payment_caption("Gold", 1, "5", "txn-123", "km")
+
+    assert "ទូទាត់ $5.00" in caption
+    assert "ផលិតផល៖" in caption
+    assert "ស្កេន KHQR ដើម្បីបញ្ចប់ការទូទាត់។" in caption
+    assert "អ្នកមានពេល 15 នាទី" in caption
 
 
 def test_terminal_payment_status_deletes_qr_after_message_is_saved():
@@ -263,6 +301,7 @@ def test_expired_payment_deletes_qr_notifies_user_and_releases_order():
             payment_message=AsyncMock(return_value={"chat_id": 123, "message_id": 456}),
             clear_payment_message=AsyncMock(),
             release_order=AsyncMock(),
+            user_language=AsyncMock(return_value="km"),
         )
 
         await expire_payment(bot, store, "order-123", 123, "expired")
@@ -274,6 +313,27 @@ def test_expired_payment_deletes_qr_notifies_user_and_releases_order():
             "សូមព្យាយាមម្តងទៀតប្រសិនបើអ្នកនៅតែចង់ទិញផលិតផលនេះ។",
         )
         store.release_order.assert_awaited_once_with("order-123", "expired")
+        store.user_language.assert_awaited_once_with(123)
+
+    asyncio.run(run_test())
+
+
+def test_expired_payment_message_uses_english_preference():
+    async def run_test():
+        bot = SimpleNamespace(delete_message=AsyncMock(), send_message=AsyncMock())
+        store = SimpleNamespace(
+            payment_message=AsyncMock(return_value=None),
+            clear_payment_message=AsyncMock(),
+            release_order=AsyncMock(),
+            user_language=AsyncMock(return_value="en"),
+        )
+
+        await expire_payment(bot, store, "order-123", 123, "expired")
+
+        assert bot.send_message.await_args.args == (
+            123,
+            "❌ Payment was not completed and the QR code was cancelled. Please try again if you still want to buy this product.",
+        )
 
     asyncio.run(run_test())
 
@@ -459,6 +519,8 @@ def test_stock_notification_reaches_users_and_configured_chats_once():
         assert "ចំនួនថ្មី៖ 4" in bot.send_message.await_args_list[1].args[1]
         assert "New quantity: 4" in bot.send_message.await_args_list[2].args[1]
         assert bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "p:product-123"
+        assert bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0].text == "🛍 View product"
+        assert bot.send_message.await_args_list[1].kwargs["reply_markup"].inline_keyboard[0][0].text == "🛍 មើល Package"
 
     asyncio.run(run_test())
 

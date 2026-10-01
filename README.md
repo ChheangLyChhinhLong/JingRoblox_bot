@@ -171,13 +171,14 @@ Script អាន `.env` ពី project root។ វាត្រូវការ `S
 
 ### វីដេអូ “How to buy”
 
-បញ្ចូល `how_to_buy_video_url` និង `how_to_buy_caption` ក្នុង `public.bot_settings` តាម Supabase SQL Editor។ `value` របស់ video អាចជា Telegram `file_id` ឬ URL វីដេអូដែលអាចចូលប្រើជាសាធារណៈបាន។ Caption មួយនេះត្រូវបានបង្ហាញសម្រាប់ភាសាទាំងពីរ ហើយ Telegram កំណត់ caption អតិបរមា 1024 តួអក្សរ។
+បញ្ចូល `how_to_buy_video_url` និង caption ក្នុង `public.bot_settings` តាម Supabase SQL Editor។ `value` របស់ video អាចជា Telegram `file_id` ឬ URL វីដេអូដែលអាចចូលប្រើជាសាធារណៈបាន។ ប្រើ `how_to_buy_caption_km` និង `how_to_buy_caption_en` ដើម្បីបង្ហាញ caption តាមភាសាអ្នកប្រើ។ បើមិនបានកំណត់ caption តាមភាសា bot នឹងប្រើ `how_to_buy_caption` ចាស់ជាជម្រើសបម្រុង។ Telegram កំណត់ caption អតិបរមា 1024 តួអក្សរ។
 
 ```sql
 insert into public.bot_settings (key, value)
 values
     ('how_to_buy_video_url', 'PASTE_TELEGRAM_FILE_ID_OR_PUBLIC_VIDEO_URL'),
-    ('how_to_buy_caption', 'ការណែនាំអំពីរបៀបទិញ')
+    ('how_to_buy_caption_km', 'ការណែនាំអំពីរបៀបទិញ'),
+    ('how_to_buy_caption_en', 'How to buy tutorial')
 on conflict (key) do update set value = excluded.value;
 ```
 

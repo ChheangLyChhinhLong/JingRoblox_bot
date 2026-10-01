@@ -56,16 +56,16 @@ def money(amount: Any) -> str:
     return f"${Decimal(str(amount)):.2f}"
 
 
-def payment_caption(product_name: str, quantity: int, amount: Any, transaction_ref: str) -> str:
+def payment_caption(product_name: str, quantity: int, amount: Any, transaction_ref: str, language: str = "en") -> str:
     total = f"{Decimal(str(amount)):.2f}"
     return (
-        f"💳 <b>Pay ${total}</b>\n\n"
-        f"🛍 <b>Product:</b> {html.escape(product_name)} x{quantity}\n"
-        f"💰 <b>Total:</b> ${total}\n"
-        f"🟢 <b>Remaining to pay:</b> ${total}\n"
-        f"🏷 <b>Ref:</b> <code>{html.escape(transaction_ref)}</code>\n"
-        "⏱ <b>Scan KHQR to complete payment.</b>\n"
-        "⏰ <b>You have 15 minutes to pay. The QR refreshes itself.</b>"
+        f"💳 <b>{copy(language, 'ទូទាត់ $' + total, 'Pay $' + total)}</b>\n\n"
+        f"🛍 <b>{copy(language, 'ផលិតផល៖', 'Product:')}</b> {html.escape(product_name)} x{quantity}\n"
+        f"💰 <b>{copy(language, 'សរុប៖', 'Total:')}</b> ${total}\n"
+        f"🟢 <b>{copy(language, 'នៅសល់ត្រូវបង់៖', 'Remaining to pay:')}</b> ${total}\n"
+        f"🏷 <b>{copy(language, 'លេខយោង៖', 'Ref:')}</b> <code>{html.escape(transaction_ref)}</code>\n"
+        f"⏱ <b>{copy(language, 'ស្កេន KHQR ដើម្បីបញ្ចប់ការទូទាត់។', 'Scan KHQR to complete payment.')}</b>\n"
+        f"⏰ <b>{copy(language, 'អ្នកមានពេល 15 នាទីដើម្បីទូទាត់។ QR code នឹងផុតកំណត់ដោយស្វ័យប្រវត្តិ។', 'You have 15 minutes to pay. The QR refreshes itself.')}</b>"
     )
 
 
@@ -111,31 +111,31 @@ def quantity_limit(stock: int) -> int:
     return max(0, min(3, stock))
 
 
-def parse_product_caption(caption: str) -> tuple[str, str, str]:
+def parse_product_caption(caption: str, language: str = "km") -> tuple[str, str, str]:
     if caption.lstrip().startswith("/"):
-        raise ValueError("សូមផ្ញើ Caption ដោយមិនដាក់សញ្ញា / នៅខាងមុខ។")
+        raise ValueError(copy(language, "សូមផ្ញើ Caption ដោយមិនដាក់សញ្ញា / នៅខាងមុខ។", "Please send the caption without a leading /."))
     fields = [field.strip() for field in caption.split("|", 2)]
     if len(fields) != 3 or not fields[0] or not fields[1]:
-        raise ValueError("សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។")
+        raise ValueError(copy(language, "សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។", "Use the format Name | Price | Details."))
     try:
         price = Decimal(fields[1])
     except InvalidOperation:
-        raise ValueError("តម្លៃមិនត្រឹមត្រូវទេ។") from None
+        raise ValueError(copy(language, "តម្លៃមិនត្រឹមត្រូវទេ។", "The price is invalid.")) from None
     if not price.is_finite() or price <= 0:
-        raise ValueError("តម្លៃត្រូវតែធំជាង 0។")
+        raise ValueError(copy(language, "តម្លៃត្រូវតែធំជាង 0។", "The price must be greater than 0."))
     return fields[0], str(price), fields[2]
 
 
-def parse_stock_add(text: str) -> tuple[str, list[str]] | None:
+def parse_stock_add(text: str, language: str = "km") -> tuple[str, list[str]] | None:
     header, separator, stock_text = text.partition("|")
     parts = header.strip().split()
     if not parts or parts[0].lower() != "addstock":
         return None
     if len(parts) != 2 or not separator:
-        raise ValueError("សូមប្រើទម្រង់ addstock <product_id> | code1, code2។")
+        raise ValueError(copy(language, "សូមប្រើទម្រង់ addstock <product_id> | code1, code2។", "Use the format addstock <product_id> | code1, code2."))
     credentials = [item.strip() for item in stock_text.replace("\n", ",").split(",") if item.strip()]
     if not credentials:
-        raise ValueError("សូមបញ្ចូល Code យ៉ាងហោចណាស់មួយ។")
+        raise ValueError(copy(language, "សូមបញ្ចូល Code យ៉ាងហោចណាស់មួយ។", "Enter at least one code."))
     return parts[1], credentials
 
 
@@ -233,40 +233,41 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
     ]
 
 
-def admin_category_actions(category_id: str) -> list[list[InlineKeyboardButton]]:
+def admin_category_actions(category_id: str, language: str = "km") -> list[list[InlineKeyboardButton]]:
     return [
-        [InlineKeyboardButton(text="➕ បន្ថែម Package", callback_data=f"admin:product-add:{category_id}")],
+        [InlineKeyboardButton(text=copy(language, "➕ បន្ថែម Package", "➕ Add package"), callback_data=f"admin:product-add:{category_id}")],
         [
-            InlineKeyboardButton(text="✏️ កែ Catalog", callback_data=f"admin:category-edit:{category_id}"),
-            InlineKeyboardButton(text="🗑 បិទ Catalog", callback_data=f"admin:category-disable:{category_id}"),
+            InlineKeyboardButton(text=copy(language, "✏️ កែ Catalog", "✏️ Edit catalog"), callback_data=f"admin:category-edit:{category_id}"),
+            InlineKeyboardButton(text=copy(language, "🗑 បិទ Catalog", "🗑 Disable catalog"), callback_data=f"admin:category-disable:{category_id}"),
         ],
-        back_button("admin:catalogs"),
+        back_button("admin:catalogs", language),
     ]
 
 
-def admin_product_actions(product_id: str, category_id: str) -> list[list[InlineKeyboardButton]]:
+def admin_product_actions(product_id: str, category_id: str, language: str = "km") -> list[list[InlineKeyboardButton]]:
     return [
         [
-            InlineKeyboardButton(text="✏️ កែ Package", callback_data=f"admin:product-edit:{product_id}"),
-            InlineKeyboardButton(text="🗑 បិទ Package", callback_data=f"admin:product-disable:{product_id}"),
+            InlineKeyboardButton(text=copy(language, "✏️ កែ Package", "✏️ Edit package"), callback_data=f"admin:product-edit:{product_id}"),
+            InlineKeyboardButton(text=copy(language, "🗑 បិទ Package", "🗑 Disable package"), callback_data=f"admin:product-disable:{product_id}"),
         ],
         [
-            InlineKeyboardButton(text="➕ បន្ថែមស្តុក", callback_data=f"admin:stock-add:{product_id}"),
-            InlineKeyboardButton(text="➖ ដកស្តុក", callback_data=f"admin:stock-remove:{product_id}"),
+            InlineKeyboardButton(text=copy(language, "➕ បន្ថែមស្តុក", "➕ Add stock"), callback_data=f"admin:stock-add:{product_id}"),
+            InlineKeyboardButton(text=copy(language, "➖ ដកស្តុក", "➖ Remove stock"), callback_data=f"admin:stock-remove:{product_id}"),
         ],
-        [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data=f"au:{product_id}")],
-        back_button(f"ac:{category_id}"),
+        [InlineKeyboardButton(text=copy(language, "📥 បញ្ចូលស្តុក (.txt)", "📥 Import stock (.txt)"), callback_data=f"au:{product_id}")],
+        back_button(f"ac:{category_id}", language),
     ]
 
 
 def payment_keyboard(
     order_id: str,
     open_url: str,
+    language: str = "km",
 ) -> InlineKeyboardMarkup:
     return keyboard(
         [
-            [InlineKeyboardButton(text="🏦 បើកក្នុង ABA Mobile", url=open_url)],
-            [InlineKeyboardButton(text="✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", callback_data=f"check_payment_{order_id}")],
+            [InlineKeyboardButton(text=copy(language, "🏦 បើកក្នុង ABA Mobile", "🏦 Open in ABA Mobile"), url=open_url)],
+            [InlineKeyboardButton(text=copy(language, "✅ ខ្ញុំបានទូទាត់ · ពិនិត្យ", "✅ I have paid · Check"), callback_data=f"check_payment_{order_id}")],
         ]
     )
 
@@ -315,21 +316,24 @@ async def notify_stock_added(bot: Bot, store: Store, chat_ids: str, product_id: 
             chat_id = chat
         destinations.setdefault(chat_id, None)
 
-    keyboard_markup = keyboard(
-        [[InlineKeyboardButton(text="🛍 មើល Package / View product", callback_data=f"p:{product_id}")]]
-    )
     sent = 0
     failed = 0
     for index, (chat_id, language) in enumerate(destinations.items(), start=1):
         if language == "en":
             text = f"📦 New stock is available!\n🛍 {product['name']}\n✅ New quantity: {added}"
+            button_text = "🛍 View product"
         elif language == "km":
             text = f"📦 មានស្តុកថ្មីហើយ!\n🛍 {product['name']}\n✅ ចំនួនថ្មី៖ {added}"
+            button_text = "🛍 មើល Package"
         else:
             text = (
                 f"📦 មានស្តុកថ្មី / New stock is available\n"
                 f"🛍 {product['name']}\n✅ ចំនួនថ្មី / New quantity: {added}"
             )
+            button_text = "🛍 មើល Package / View product"
+        keyboard_markup = keyboard(
+            [[InlineKeyboardButton(text=button_text, callback_data=f"p:{product_id}")]]
+        )
         try:
             await bot.send_message(chat_id, text, reply_markup=keyboard_markup)
             sent += 1
@@ -409,10 +413,14 @@ async def expire_payment(
     status: str,
 ) -> None:
     await delete_payment_message(bot, store, order_id)
+    language = await safe_user_language(store, chat_id)
     await bot.send_message(
         chat_id,
-        "❌ ការទូទាត់មិនបានបញ្ចប់។ QR code ត្រូវបានលុបចោល។ "
-        "សូមព្យាយាមម្តងទៀតប្រសិនបើអ្នកនៅតែចង់ទិញផលិតផលនេះ។",
+        copy(
+            language,
+            "❌ ការទូទាត់មិនបានបញ្ចប់។ QR code ត្រូវបានលុបចោល។ សូមព្យាយាមម្តងទៀតប្រសិនបើអ្នកនៅតែចង់ទិញផលិតផលនេះ។",
+            "❌ Payment was not completed and the QR code was cancelled. Please try again if you still want to buy this product.",
+        ),
     )
     await store.release_order(order_id, status)
 
@@ -495,7 +503,9 @@ def register_handlers(
             [[InlineKeyboardButton(text=copy(language, "⬅️ ត្រឡប់ទៅម៉ឺនុយ", "⬅️ Back to menu"), callback_data="home")]]
         )
         try:
-            settings_data = await store.bot_settings(("how_to_buy_video_url", "how_to_buy_caption"))
+            settings_data = await store.bot_settings(
+                ("how_to_buy_video_url", "how_to_buy_caption", "how_to_buy_caption_km", "how_to_buy_caption_en")
+            )
         except Exception:
             logger.exception("Could not load tutorial settings")
             await edit_text_message(
@@ -512,7 +522,9 @@ def register_handlers(
                 reply_markup=back_to_menu,
             )
             return
-        caption = settings_data.get("how_to_buy_caption", "").strip()[:1024]
+        caption = (
+            settings_data.get(f"how_to_buy_caption_{language}") or settings_data.get("how_to_buy_caption", "")
+        ).strip()[:1024]
         await callback.message.answer_video(
             video=video,
             caption=caption or None,
@@ -646,7 +658,7 @@ def register_handlers(
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text=f"💳 បង់ប្រាក់ • {money(total)}",
+                        text=f"💳 {copy(language, 'បង់ប្រាក់', 'Pay')} • {money(total)}",
                         callback_data=f"b:{product_data['id']}:{quantity}",
                     )
                 ]
@@ -743,13 +755,14 @@ def register_handlers(
             int(quantity_text),
             order["total"],
             str(payment["transaction_id"]),
+            language,
         )
         payment_message = await bot.send_photo(
             callback.from_user.id,
             payment_qr(payment),
             caption=caption,
             parse_mode="HTML",
-            reply_markup=payment_keyboard(str(order["id"]), open_url),
+            reply_markup=payment_keyboard(str(order["id"]), open_url, language),
         )
         await delete_replaced_message(callback.message)
         await track_payment_message(bot, store, order["id"], payment_message.message_id)
@@ -885,27 +898,28 @@ def register_handlers(
     @router.callback_query(F.data == "admin")
     async def admin(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
-            await callback.message.edit_text("អ្នកមិនមានសិទ្ធិប្រើប្រាស់ទេ។", reply_markup=keyboard([back_button()]))
+            await callback.message.edit_text(copy(language, "អ្នកមិនមានសិទ្ធិប្រើប្រាស់ទេ។", "You are not authorized to use this."), reply_markup=keyboard([back_button(language=language)]))
             return
         result = await store.client.table("products").select("id,name").eq("active", True).order("sort_order").execute()
         products = result.data or []
         stock_counts = await asyncio.gather(*(store.available_stock(item["id"]) for item in products))
         lines = [
-            f"• {html.escape(item['name'])}: {stock} នៅសល់"
+            f"• {html.escape(item['name'])}: {stock} {copy(language, 'នៅសល់', 'available')}"
             for item, stock in zip(products, stock_counts)
         ]
         total_stock = sum(stock_counts)
         rows = [
-            [InlineKeyboardButton(text="🗂 គ្រប់គ្រង Catalog និង Package", callback_data="admin:catalogs")],
-            [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data="admin:upload")],
-            [InlineKeyboardButton(text="📊 ស្ថិតិការលក់", callback_data="admin:sales")],
-            back_button(),
+            [InlineKeyboardButton(text=copy(language, "🗂 គ្រប់គ្រង Catalog និង Package", "🗂 Manage catalogs and packages"), callback_data="admin:catalogs")],
+            [InlineKeyboardButton(text=copy(language, "📥 បញ្ចូលស្តុក (.txt)", "📥 Import stock (.txt)"), callback_data="admin:upload")],
+            [InlineKeyboardButton(text=copy(language, "📊 ស្ថិតិការលក់", "📊 Sales summary"), callback_data="admin:sales")],
+            back_button(language=language),
         ]
         await callback.message.edit_text(
-            "⚙️ <b>ផ្ទាំងគ្រប់គ្រងហាង</b>\n"
-            f"📦 <b>ស្តុកដែលអាចលក់បាន៖ {total_stock}</b>\n"
-            + ("\n".join(lines) or "មិនមាន Package សកម្មទេ។"),
+            f"⚙️ <b>{copy(language, 'ផ្ទាំងគ្រប់គ្រងហាង', 'Store admin')}</b>\n"
+            f"📦 <b>{copy(language, 'ស្តុកដែលអាចលក់បាន៖', 'Available stock:')} {total_stock}</b>\n"
+            + ("\n".join(lines) or copy(language, "មិនមាន Package សកម្មទេ។", "No active packages.")),
             parse_mode="HTML",
             reply_markup=keyboard(rows),
         )
@@ -913,6 +927,7 @@ def register_handlers(
     @router.callback_query(F.data == "admin:catalogs")
     async def admin_catalogs(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         result = await store.client.table("categories").select("id,name").eq("active", True).order("sort_order").execute()
@@ -923,16 +938,16 @@ def register_handlers(
         ]
         rows.extend(
             [
-                [InlineKeyboardButton(text="➕ បន្ថែម Catalog", callback_data="admin:category-add")],
-                back_button("admin"),
+                [InlineKeyboardButton(text=copy(language, "➕ បន្ថែម Catalog", "➕ Add catalog"), callback_data="admin:category-add")],
+                back_button("admin", language),
             ]
         )
         await callback.message.edit_text(
-            f"🗂 <b>គ្រប់គ្រង Catalog ({len(categories)})</b>\n"
+            f"🗂 <b>{copy(language, 'គ្រប់គ្រង Catalog', 'Manage catalogs')} ({len(categories)})</b>\n"
             + (
-                "ជ្រើសរើស Catalog ដើម្បីមើល Package និងសកម្មភាព៖"
+                copy(language, "ជ្រើសរើស Catalog ដើម្បីមើល Package និងសកម្មភាព៖", "Choose a catalog to view its packages and actions:")
                 if categories
-                else "មិនទាន់មាន Catalog ទេ។ ចុចបន្ថែម Catalog ដើម្បីចាប់ផ្តើម។"
+                else copy(language, "មិនទាន់មាន Catalog ទេ។ ចុចបន្ថែម Catalog ដើម្បីចាប់ផ្តើម។", "No catalogs yet. Add a catalog to get started.")
             ),
             parse_mode="HTML",
             reply_markup=keyboard(rows),
@@ -941,24 +956,26 @@ def register_handlers(
     @router.callback_query(F.data == "admin:category-add")
     async def add_category_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         pending_admin_input[callback.from_user.id] = ("category_add", None)
         await callback.message.edit_text(
-            "ផ្ញើព័ត៌មាន Catalog តាមទម្រង់៖ <code>ឈ្មោះ | ព័ត៌មានលម្អិត</code>",
+            copy(language, "ផ្ញើព័ត៌មាន Catalog តាមទម្រង់៖ <code>ឈ្មោះ | ព័ត៌មានលម្អិត</code>", "Send catalog details in this format: <code>Name | Details</code>"),
             parse_mode="HTML",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.callback_query(F.data.startswith("ac:"))
     async def admin_category(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         category_id = callback.data[3:]
         category_data = await store.category(category_id)
         if not category_data:
-            await callback.message.edit_text("រកមិនឃើញ Catalog ទេ។", reply_markup=keyboard([back_button("admin:catalogs")]))
+            await callback.message.edit_text(copy(language, "រកមិនឃើញ Catalog ទេ។", "Catalog not found."), reply_markup=keyboard([back_button("admin:catalogs", language)]))
             return
         result = await store.client.table("products").select("id,name").eq("category_id", category_id).eq("active", True).order("sort_order").execute()
         products = result.data or []
@@ -966,17 +983,17 @@ def register_handlers(
         rows = [
             [
                 InlineKeyboardButton(
-                    text=f"📦 {item['name'][:40]} · {stock} នៅសល់",
+                    text=f"📦 {item['name'][:40]} · {stock} {copy(language, 'នៅសល់', 'available')}",
                     callback_data=f"ap:{item['id']}",
                 )
             ]
             for item, stock in zip(products, stock_counts)
         ]
-        rows.extend(admin_category_actions(category_id))
+        rows.extend(admin_category_actions(category_id, language))
         product_summary = (
-            f"📦 Package សកម្ម៖ {len(products)}"
+            f"📦 {copy(language, 'Package សកម្ម៖', 'Active packages:')} {len(products)}"
             if products
-            else "មិនទាន់មាន Package ទេ។ ចុចបន្ថែម Package ដើម្បីចាប់ផ្តើម។"
+            else copy(language, "មិនទាន់មាន Package ទេ។ ចុចបន្ថែម Package ដើម្បីចាប់ផ្តើម។", "No packages yet. Add a package to get started.")
         )
         await callback.message.edit_text(
             f"🗂 <b>{html.escape(category_data['name'])}</b>\n"
@@ -988,19 +1005,20 @@ def register_handlers(
     @router.callback_query(F.data.startswith("ap:"))
     async def admin_product(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_data = await store.product(callback.data[3:])
         if not product_data:
-            await callback.message.edit_text("រកមិនឃើញ Package ទេ។", reply_markup=keyboard([back_button("admin:catalogs")]))
+            await callback.message.edit_text(copy(language, "រកមិនឃើញ Package ទេ។", "Package not found."), reply_markup=keyboard([back_button("admin:catalogs", language)]))
             return
         stock = await store.available_stock(product_data["id"])
-        rows = admin_product_actions(product_data["id"], product_data["category_id"])
+        rows = admin_product_actions(product_data["id"], product_data["category_id"], language)
         await callback.message.edit_text(
             f"📦 <b>{html.escape(product_data['name'])}</b>\n"
             f"ID: <code>{html.escape(product_data['id'])}</code>\n"
-            f"តម្លៃ៖ {money(product_data['price'])}\n"
-            f"ស្តុកនៅសល់៖ {stock}\n\n"
+            f"{copy(language, 'តម្លៃ៖', 'Price:')} {money(product_data['price'])}\n"
+            f"{copy(language, 'ស្តុកនៅសល់៖', 'Stock remaining:')} {stock}\n\n"
             f"{html.escape(product_data.get('description') or '')}",
             parse_mode="HTML",
             reply_markup=keyboard(rows),
@@ -1010,9 +1028,10 @@ def register_handlers(
     async def set_product_photo(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admin_ids:
             return
+        language = await safe_user_language(store, message.from_user.id)
         parts = (message.caption or "").strip().split(maxsplit=1)
         if not parts or parts[0] != "setphoto" or len(parts) != 2 or not parts[1].strip():
-            await message.answer("ទម្រង់មិនត្រឹមត្រូវ។ សូមប្រើ setphoto <product_id> ជាមួយរូបភាព។")
+            await message.answer(copy(language, "ទម្រង់មិនត្រឹមត្រូវ។ សូមប្រើ setphoto <product_id> ជាមួយរូបភាព។", "Invalid format. Use setphoto <product_id> with an image."))
             return
         product_id = parts[1].strip()
         try:
@@ -1020,13 +1039,13 @@ def register_handlers(
             updated = await store.update_product_image(product_id, image_url)
         except Exception:
             logger.exception("Could not update product image %s", product_id)
-            await message.answer("មិនអាចធ្វើបច្ចុប្បន្នភាពរូបភាព Package បានទេ។")
+            await message.answer(copy(language, "មិនអាចធ្វើបច្ចុប្បន្នភាពរូបភាព Package បានទេ។", "Could not update the package image."))
             return
         if not updated:
-            await message.answer(f"រកមិនឃើញ Package ID {html.escape(product_id)} ទេ។")
+            await message.answer(copy(language, f"រកមិនឃើញ Package ID {html.escape(product_id)} ទេ។", f"Package ID {html.escape(product_id)} not found."))
             return
         await message.answer(
-            f"✅ បាន Upload រូបភាពទៅ Cloudinary និងបច្ចុប្បន្នភាព Package ID <code>{html.escape(product_id)}</code> ជោគជ័យ!",
+            copy(language, f"✅ បាន Upload រូបភាពទៅ Cloudinary និងបច្ចុប្បន្នភាព Package ID <code>{html.escape(product_id)}</code> ជោគជ័យ!", f"✅ Image uploaded to Cloudinary and package ID <code>{html.escape(product_id)}</code> updated."),
             parse_mode="HTML",
         )
 
@@ -1034,12 +1053,13 @@ def register_handlers(
     async def create_product_with_photo(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admin_ids:
             return
+        language = await safe_user_language(store, message.from_user.id)
         pending = pending_admin_input.get(message.from_user.id)
         if not pending or pending[0] != "product_add" or not pending[1]:
-            await message.answer("សូមជ្រើសរើស Catalog និង Package ថ្មីក្នុងម៉ឺនុយគ្រប់គ្រងជាមុនសិន។")
+            await message.answer(copy(language, "សូមជ្រើសរើស Catalog និង Package ថ្មីក្នុងម៉ឺនុយគ្រប់គ្រងជាមុនសិន។", "Choose a catalog and start adding a package from the admin menu first."))
             return
         try:
-            name, price, description = parse_product_caption(message.caption or "")
+            name, price, description = parse_product_caption(message.caption or "", language)
             image_url = await upload_product_image(bot, settings, message.photo[-1].file_id)
             product_id = await store.create_product(pending[1], name, price, description, image_url)
         except (InvalidOperation, ValueError) as exc:
@@ -1047,126 +1067,136 @@ def register_handlers(
             return
         except Exception:
             logger.exception("Could not create package with photo for admin %s", message.from_user.id)
-            await message.answer("មិនអាចបង្កើត Package បានទេ។ សូមពិនិត្យ Cloudinary និង Supabase រួចព្យាយាមម្ដងទៀត។")
+            await message.answer(copy(language, "មិនអាចបង្កើត Package បានទេ។ សូមពិនិត្យ Cloudinary និង Supabase រួចព្យាយាមម្ដងទៀត។", "Could not create the package. Check Cloudinary and Supabase, then try again."))
             return
         pending_admin_input.pop(message.from_user.id, None)
         await message.answer(
-            f'✅ បានបង្កើត Package "{html.escape(name)}" និង Upload រូបភាពទៅ Cloudinary រួចរាល់! '
-            f"(ID: <code>{html.escape(product_id)}</code>)",
+            copy(language, f'✅ បានបង្កើត Package "{html.escape(name)}" និង Upload រូបភាពទៅ Cloudinary រួចរាល់! ', f'✅ Package "{html.escape(name)}" created and image uploaded to Cloudinary! ')
+            + f"(ID: <code>{html.escape(product_id)}</code>)",
             parse_mode="HTML",
         )
 
     @router.callback_query(F.data.startswith("admin:product-add:"))
     async def add_product_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         category_id = callback.data.removeprefix("admin:product-add:")
         pending_admin_input[callback.from_user.id] = ("product_add", category_id)
         await callback.message.edit_text(
-            "ផ្ញើរូបភាពជាមួយ Caption <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code> ដើម្បីបង្កើត Package ថ្មី។",
+            copy(language, "ផ្ញើរូបភាពជាមួយ Caption <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code> ដើម្បីបង្កើត Package ថ្មី។", "Send an image with the caption <code>Name | Price | Details</code> to create a package."),
             parse_mode="HTML",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.callback_query(F.data.startswith("admin:category-edit:"))
     async def edit_category_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         category_id = callback.data.removeprefix("admin:category-edit:")
         pending_admin_input[callback.from_user.id] = ("category_edit", category_id)
         await callback.message.edit_text(
-            "ផ្ញើឈ្មោះ និងព័ត៌មានថ្មីតាមទម្រង់៖ <code>ឈ្មោះ | ព័ត៌មានលម្អិត</code>",
+            copy(language, "ផ្ញើឈ្មោះ និងព័ត៌មានថ្មីតាមទម្រង់៖ <code>ឈ្មោះ | ព័ត៌មានលម្អិត</code>", "Send the updated name and details in this format: <code>Name | Details</code>"),
             parse_mode="HTML",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.callback_query(F.data.startswith("admin:product-edit:"))
     async def edit_product_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_id = callback.data.removeprefix("admin:product-edit:")
         pending_admin_input[callback.from_user.id] = ("product_edit", product_id)
         await callback.message.edit_text(
-            "ផ្ញើឈ្មោះ តម្លៃ និងព័ត៌មានថ្មីតាមទម្រង់៖ <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code>",
+            copy(language, "ផ្ញើឈ្មោះ តម្លៃ និងព័ត៌មានថ្មីតាមទម្រង់៖ <code>ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត</code>", "Send the updated name, price, and details in this format: <code>Name | Price | Details</code>"),
             parse_mode="HTML",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.callback_query(F.data.startswith("admin:category-disable:"))
     async def confirm_category_disable(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         category_id = callback.data.removeprefix("admin:category-disable:")
         rows = [
-            [InlineKeyboardButton(text="✅ បិទ Catalog", callback_data=f"adc:{category_id}")],
-            back_button(f"ac:{category_id}"),
+            [InlineKeyboardButton(text=copy(language, "✅ បិទ Catalog", "✅ Disable catalog"), callback_data=f"adc:{category_id}")],
+            back_button(f"ac:{category_id}", language),
         ]
-        await callback.message.edit_text("បិទ Catalog នេះ និងផលិតផលសកម្មរបស់វា?", reply_markup=keyboard(rows))
+        await callback.message.edit_text(copy(language, "បិទ Catalog នេះ និងផលិតផលសកម្មរបស់វា?", "Disable this catalog and all its active packages?"), reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("adc:"))
     async def disable_category(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         category_id = callback.data[4:]
         await store.client.table("categories").update({"active": False}).eq("id", category_id).execute()
         await store.client.table("products").update({"active": False}).eq("category_id", category_id).execute()
-        await callback.message.edit_text("បានបិទ Catalog និងផលិតផលរបស់វា។", reply_markup=keyboard([back_button("admin:catalogs")]))
+        await callback.message.edit_text(copy(language, "បានបិទ Catalog និងផលិតផលរបស់វា។", "Catalog and its packages disabled."), reply_markup=keyboard([back_button("admin:catalogs", language)]))
 
     @router.callback_query(F.data.startswith("admin:product-disable:"))
     async def confirm_product_disable(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_id = callback.data.removeprefix("admin:product-disable:")
         rows = [
-            [InlineKeyboardButton(text="✅ បិទ Package", callback_data=f"adp:{product_id}")],
-            back_button(f"ap:{product_id}"),
+            [InlineKeyboardButton(text=copy(language, "✅ បិទ Package", "✅ Disable package"), callback_data=f"adp:{product_id}")],
+            back_button(f"ap:{product_id}", language),
         ]
-        await callback.message.edit_text("បិទ Package នេះ?", reply_markup=keyboard(rows))
+        await callback.message.edit_text(copy(language, "បិទ Package នេះ?", "Disable this package?"), reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("adp:"))
     async def disable_product(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_id = callback.data[4:]
         await store.client.table("products").update({"active": False}).eq("id", product_id).execute()
-        await callback.message.edit_text("បានបិទ Package។", reply_markup=keyboard([back_button("admin:catalogs")]))
+        await callback.message.edit_text(copy(language, "បានបិទ Package។", "Package disabled."), reply_markup=keyboard([back_button("admin:catalogs", language)]))
 
     @router.callback_query(F.data == "admin:cancel-input")
     async def cancel_admin_input(callback: CallbackQuery) -> None:
+        language = await safe_user_language(store, callback.from_user.id)
         pending = pending_admin_input.pop(callback.from_user.id, None)
-        await callback.answer("បានបោះបង់")
+        await callback.answer(copy(language, "បានបោះបង់", "Cancelled"))
         target = f"ap:{pending[1]}" if pending and pending[0] in {"stock_add", "stock_remove"} else "admin:catalogs"
-        await callback.message.edit_text("បានបោះបង់។", reply_markup=keyboard([back_button(target)]))
+        await callback.message.edit_text(copy(language, "បានបោះបង់។", "Cancelled."), reply_markup=keyboard([back_button(target, language)]))
 
     @router.callback_query(F.data.startswith("admin:stock-add:"))
     async def add_stock_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_id = callback.data.removeprefix("admin:stock-add:")
         pending_admin_input[callback.from_user.id] = ("stock_add", product_id)
         await callback.message.answer(
-            "ផ្ញើ Code ឬ username:password មួយក្នុងមួយបន្ទាត់ (អាចបញ្ចូល 1 ឬច្រើន)៖",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            copy(language, "ផ្ញើ Code ឬ username:password មួយក្នុងមួយបន្ទាត់ (អាចបញ្ចូល 1 ឬច្រើន)៖", "Send one code or username:password per line (you can send one or more):"),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.callback_query(F.data.startswith("admin:stock-remove:"))
     async def remove_stock_prompt(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         product_id = callback.data.removeprefix("admin:stock-remove:")
         pending_admin_input[callback.from_user.id] = ("stock_remove", product_id)
         await callback.message.answer(
-            "ផ្ញើ Code ឬ username:password ដែលចង់ដក មួយក្នុងមួយបន្ទាត់។ ត្រូវផ្គូផ្គងនឹងទិន្នន័យដើម ហើយដកបានតែស្តុកដែលមិនទាន់កក់ ឬលក់៖",
-            reply_markup=keyboard([back_button("admin:cancel-input")]),
+            copy(language, "ផ្ញើ Code ឬ username:password ដែលចង់ដក មួយក្នុងមួយបន្ទាត់។ ត្រូវផ្គូផ្គងនឹងទិន្នន័យដើម ហើយដកបានតែស្តុកដែលមិនទាន់កក់ ឬលក់៖", "Send the exact code or username:password to remove, one per line. Only stock that is neither reserved nor sold can be removed."),
+            reply_markup=keyboard([back_button("admin:cancel-input", language)]),
         )
 
     @router.message(F.text)
@@ -1176,27 +1206,25 @@ def register_handlers(
         text = (message.text or "").strip()
         if text.startswith("/"):
             return
-        if message.from_user.id in settings.admin_ids:
-            try:
-                stock_add = parse_stock_add(text)
-                if stock_add:
-                    product_id, credentials = stock_add
-                    added = await store.import_stock(product_id, credentials, settings.stock_encryption_key)
-                    await notify_stock_added(bot, store, settings.stock_notification_chat_ids, product_id, added)
-                    await message.answer(f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។")
-                    return
-            except ValueError as exc:
-                await message.answer(html.escape(str(exc)))
+        if message.from_user.id not in settings.admin_ids:
+            return
+        language = await safe_user_language(store, message.from_user.id)
+        try:
+            stock_add = parse_stock_add(text, language)
+            if stock_add:
+                product_id, credentials = stock_add
+                added = await store.import_stock(product_id, credentials, settings.stock_encryption_key)
+                await notify_stock_added(bot, store, settings.stock_notification_chat_ids, product_id, added)
+                await message.answer(copy(language, f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។", f"Added {added} new stock item(s)."))
                 return
-            except Exception:
-                logger.exception("Direct stock import failed for admin %s", message.from_user.id)
-                await message.answer("មិនអាចបញ្ចូលស្តុកបានទេ។ សូមពិនិត្យ Product ID រួចព្យាយាមម្ដងទៀត។")
-                return
-        pending = (
-            pending_admin_input.get(message.from_user.id)
-            if message.from_user.id in settings.admin_ids
-            else None
-        )
+        except ValueError as exc:
+            await message.answer(html.escape(str(exc)))
+            return
+        except Exception:
+            logger.exception("Direct stock import failed for admin %s", message.from_user.id)
+            await message.answer(copy(language, "មិនអាចបញ្ចូលស្តុកបានទេ។ សូមពិនិត្យ Product ID រួចព្យាយាមម្ដងទៀត។", "Could not add stock. Check the product ID and try again."))
+            return
+        pending = pending_admin_input.get(message.from_user.id)
         if not pending:
             return
         action, target_id = pending
@@ -1204,59 +1232,59 @@ def register_handlers(
             if action in {"category_add", "category_edit"}:
                 name, separator, description = text.partition("|")
                 if not name.strip():
-                    raise ValueError("សូមបញ្ចូលឈ្មោះ Catalog។")
+                    raise ValueError(copy(language, "សូមបញ្ចូលឈ្មោះ Catalog។", "Enter a catalog name."))
                 values = {"name": name.strip(), "description": description.strip() if separator else ""}
                 if action == "category_add":
                     await store.client.table("categories").insert(values).execute()
                 else:
                     await store.client.table("categories").update(values).eq("id", target_id).execute()
             elif action == "product_add":
-                raise ValueError("សូមផ្ញើរូបភាពជាមួយ Caption ដើម្បីបង្កើត Package ថ្មី។")
+                raise ValueError(copy(language, "សូមផ្ញើរូបភាពជាមួយ Caption ដើម្បីបង្កើត Package ថ្មី។", "Send an image with a caption to create a package."))
             elif action == "product_edit":
                 fields = [part.strip() for part in text.split("|", 2)]
                 if len(fields) != 3:
-                    raise ValueError("សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។")
+                    raise ValueError(copy(language, "សូមប្រើទម្រង់ ឈ្មោះ | តម្លៃ | ព័ត៌មានលម្អិត។", "Use the format Name | Price | Details."))
                 name, price_text, description = fields
                 try:
                     price = Decimal(price_text)
                 except InvalidOperation:
-                    raise ValueError("តម្លៃមិនត្រឹមត្រូវទេ។") from None
+                    raise ValueError(copy(language, "តម្លៃមិនត្រឹមត្រូវទេ។", "The price is invalid.")) from None
                 if not name or price <= 0:
-                    raise ValueError("ឈ្មោះ និងតម្លៃត្រូវតែត្រឹមត្រូវ ហើយតម្លៃត្រូវធំជាង 0។")
+                    raise ValueError(copy(language, "ឈ្មោះ និងតម្លៃត្រូវតែត្រឹមត្រូវ ហើយតម្លៃត្រូវធំជាង 0។", "Enter a name and a valid price greater than 0."))
                 values = {"name": name, "price": str(price), "description": description}
                 await store.client.table("products").update(values).eq("id", target_id).execute()
             elif action == "stock_add":
                 credentials = [line.strip() for line in text.splitlines() if line.strip()]
                 if not credentials:
-                    raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
+                    raise ValueError(copy(language, "សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។", "Enter at least one code or username:password."))
                 added = await store.import_stock(target_id, credentials, settings.stock_encryption_key)
                 await notify_stock_added(bot, store, settings.stock_notification_chat_ids, target_id, added)
             elif action == "stock_remove":
                 credentials = [line.strip() for line in text.splitlines() if line.strip()]
                 if not credentials:
-                    raise ValueError("សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។")
+                    raise ValueError(copy(language, "សូមបញ្ចូល Code ឬ username:password យ៉ាងហោចណាស់មួយ។", "Enter at least one code or username:password."))
                 removed = await store.remove_stock(target_id, credentials, settings.stock_encryption_key)
             else:
                 return
         except (InvalidOperation, ValueError) as exc:
             await message.answer(
-                f"ព័ត៌មានមិនត្រឹមត្រូវ៖ {html.escape(str(exc))}",
-                reply_markup=keyboard([back_button("admin:cancel-input")]),
+                copy(language, f"ព័ត៌មានមិនត្រឹមត្រូវ៖ {html.escape(str(exc))}", f"Invalid input: {html.escape(str(exc))}"),
+                reply_markup=keyboard([back_button("admin:cancel-input", language)]),
             )
             return
         except Exception:
             logger.exception("Admin catalog update failed for user %s", message.from_user.id)
-            await message.answer("មិនអាចរក្សាទុកបានទេ។ សូមព្យាយាមម្ដងទៀត។")
+            await message.answer(copy(language, "មិនអាចរក្សាទុកបានទេ។ សូមព្យាយាមម្ដងទៀត។", "Could not save the changes. Please try again."))
             return
         pending_admin_input.pop(message.from_user.id, None)
         if action in {"stock_add", "stock_remove"}:
             if action == "stock_add":
-                result_message = f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។"
+                result_message = copy(language, f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។", f"Added {added} new stock item(s).")
             else:
-                result_message = f"បានដកស្តុកដែលមិនទាន់លក់ចំនួន {removed}។"
+                result_message = copy(language, f"បានដកស្តុកដែលមិនទាន់លក់ចំនួន {removed}។", f"Removed {removed} unsold stock item(s).")
             await message.answer(
                 result_message,
-                reply_markup=keyboard([back_button(f"ap:{target_id}")]),
+                reply_markup=keyboard([back_button(f"ap:{target_id}", language)]),
             )
             return
         if action == "category_edit":
@@ -1267,76 +1295,81 @@ def register_handlers(
             target = f"ac:{target_id}"
         else:
             target = "admin:catalogs"
-        await message.answer("បានរក្សាទុកដោយជោគជ័យ។", reply_markup=keyboard([back_button(target)]))
+        await message.answer(copy(language, "បានរក្សាទុកដោយជោគជ័យ។", "Saved successfully."), reply_markup=keyboard([back_button(target, language)]))
 
     @router.callback_query(F.data == "admin:upload")
     async def choose_stock_product(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         result = await store.client.table("products").select("id,name").eq("active", True).order("sort_order").execute()
         rows = [[InlineKeyboardButton(text=item["name"], callback_data=f"au:{item['id']}")] for item in result.data]
-        rows.append(back_button("admin"))
-        await callback.message.edit_text("ជ្រើសរើសផលិតផលសម្រាប់បញ្ចូលស្តុក៖", reply_markup=keyboard(rows))
+        rows.append(back_button("admin", language))
+        await callback.message.edit_text(copy(language, "ជ្រើសរើសផលិតផលសម្រាប់បញ្ចូលស្តុក៖", "Choose a product for the stock import:"), reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("au:"))
     async def request_stock_file(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         pending_stock_upload[callback.from_user.id] = callback.data[3:]
         await callback.message.answer(
-            "សូមផ្ញើឯកសារ .txt ដែលមាន Code ឬ username:password មួយក្នុងមួយជួរ។",
-            reply_markup=keyboard([back_button("admin:cancel-upload")]),
+            copy(language, "សូមផ្ញើឯកសារ .txt ដែលមាន Code ឬ username:password មួយក្នុងមួយជួរ។", "Send a .txt file with one code or username:password per line."),
+            reply_markup=keyboard([back_button("admin:cancel-upload", language)]),
         )
 
     @router.callback_query(F.data == "admin:cancel-upload")
     async def cancel_stock_file(callback: CallbackQuery) -> None:
         pending_stock_upload.pop(callback.from_user.id, None)
-        await callback.answer("បានបោះបង់")
-        await callback.message.edit_text("បានបោះបង់ការបញ្ចូលស្តុក។", reply_markup=keyboard([back_button("admin")]))
+        language = await safe_user_language(store, callback.from_user.id)
+        await callback.answer(copy(language, "បានបោះបង់", "Cancelled"))
+        await callback.message.edit_text(copy(language, "បានបោះបង់ការបញ្ចូលស្តុក។", "Stock import cancelled."), reply_markup=keyboard([back_button("admin", language)]))
 
     @router.message(F.document)
     async def import_stock_file(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admin_ids:
             return
+        language = await safe_user_language(store, message.from_user.id)
         product_id = pending_stock_upload.get(message.from_user.id)
         if not product_id:
             return
         document = message.document
         if not document.file_name or not document.file_name.lower().endswith(".txt") or (document.file_size or 0) > 1_000_000:
-            await message.answer("សូមប្រើឯកសារ .txt ទំហំមិនលើស 1 MB។", reply_markup=keyboard([back_button("admin:cancel-upload")]))
+            await message.answer(copy(language, "សូមប្រើឯកសារ .txt ទំហំមិនលើស 1 MB។", "Use a .txt file no larger than 1 MB."), reply_markup=keyboard([back_button("admin:cancel-upload", language)]))
             return
         try:
             buffer = io.BytesIO()
             await bot.download(document.file_id, destination=buffer)
             credentials = [line.strip() for line in buffer.getvalue().decode("utf-8").splitlines() if line.strip()]
             if not credentials:
-                raise ValueError("Each line must contain a code or username:password")
+                raise ValueError(copy(language, "បន្ទាត់នីមួយៗត្រូវមាន Code ឬ username:password។", "Each line must contain a code or username:password."))
             added = await store.import_stock(product_id, credentials, settings.stock_encryption_key)
         except (UnicodeDecodeError, ValueError) as exc:
-            await message.answer(f"ឯកសារមិនត្រឹមត្រូវ៖ {html.escape(str(exc))}", reply_markup=keyboard([back_button("admin:cancel-upload")]))
+            await message.answer(copy(language, f"ឯកសារមិនត្រឹមត្រូវ៖ {html.escape(str(exc))}", f"Invalid file: {html.escape(str(exc))}"), reply_markup=keyboard([back_button("admin:cancel-upload", language)]))
             return
         except Exception:
             logger.exception("Stock import failed for product %s", product_id)
-            await message.answer("មិនអាចបញ្ចូលស្តុកបានទេ។ សូមព្យាយាមម្ដងទៀត។")
+            await message.answer(copy(language, "មិនអាចបញ្ចូលស្តុកបានទេ។ សូមព្យាយាមម្ដងទៀត។", "Could not import stock. Please try again."))
             return
         pending_stock_upload.pop(message.from_user.id, None)
         await notify_stock_added(bot, store, settings.stock_notification_chat_ids, product_id, added)
-        await message.answer(f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។", reply_markup=keyboard([back_button("admin")]))
+        await message.answer(copy(language, f"បានបញ្ចូលស្តុកថ្មីចំនួន {added}។", f"Added {added} new stock item(s)."), reply_markup=keyboard([back_button("admin", language)]))
 
     @router.callback_query(F.data == "admin:sales")
     async def sales_summary(callback: CallbackQuery) -> None:
         await callback.answer()
+        language = await safe_user_language(store, callback.from_user.id)
         if callback.from_user.id not in settings.admin_ids:
             return
         summary = await store.sales_summary()
-        text = (
-            f"ស្ថិតិការលក់\nការបញ្ជាទិញដែលបានបង់៖ {summary['paid_orders']}\n"
-            f"ចំណូលសរុប៖ {money(summary['total_revenue'])}\n"
-            f"ចំណូលថ្ងៃនេះ៖ {money(summary['today_revenue'])}"
+        text = copy(
+            language,
+            f"ស្ថិតិការលក់\nការបញ្ជាទិញដែលបានបង់៖ {summary['paid_orders']}\nចំណូលសរុប៖ {money(summary['total_revenue'])}\nចំណូលថ្ងៃនេះ៖ {money(summary['today_revenue'])}",
+            f"Sales summary\nPaid orders: {summary['paid_orders']}\nTotal revenue: {money(summary['total_revenue'])}\nToday's revenue: {money(summary['today_revenue'])}",
         )
-        await callback.message.edit_text(text, reply_markup=keyboard([back_button("admin")]))
+        await callback.message.edit_text(text, reply_markup=keyboard([back_button("admin", language)]))
 
     dispatcher.include_router(router)
 
