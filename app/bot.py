@@ -79,17 +79,37 @@ def register_handlers(
         categories = await store.categories()
         rows = [[InlineKeyboardButton(text=item["name"], callback_data=f"c:{item['id']}")] for item in categories]
         rows.append(back_button())
-        await callback.message.edit_text("សូមជ្រើសរើសប្រភេទទំនិញ៖", reply_markup=keyboard(rows))
+        if not categories:
+            await callback.message.edit_text(
+                "បច្ចុប្បន្នមិនមានប្រភេទទំនិញទេ។ សូមពិនិត្យម្ដងទៀតពេលក្រោយ។",
+                reply_markup=keyboard([back_button()]),
+            )
+            return
+        descriptions = [
+            f"<b>{html.escape(item['name'])}</b>\n{html.escape(item['description'])}"
+            for item in categories
+            if item.get("description", "").strip()
+        ]
+        text = "សូមជ្រើសរើសប្រភេទទំនិញ៖"
+        if descriptions:
+            text += "\n\n" + "\n\n".join(descriptions)
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("c:"))
     async def category(callback: CallbackQuery) -> None:
         await callback.answer()
         products = await store.products(callback.data[2:])
+        if not products:
+            await callback.message.edit_text(
+                "ប្រភេទនេះមិនទាន់មានផលិតផលទេ។",
+                reply_markup=keyboard([back_button("shop"), back_button()]),
+            )
+            return
         rows = [
             [InlineKeyboardButton(text=f"{item['name']} · {money(item['price'])}", callback_data=f"p:{item['id']}")]
             for item in products
         ]
-        rows.extend([back_button("shop"), back_button()])
+        rows.append(back_button("shop"))
         await callback.message.edit_text("សូមជ្រើសរើសផលិតផល៖", reply_markup=keyboard(rows))
 
     @router.callback_query(F.data.startswith("p:"))
@@ -101,8 +121,14 @@ def register_handlers(
             return
         rows = [
             [InlineKeyboardButton(text=f"ទិញ 1 · {money(product_data['price'])}", callback_data=f"b:{product_data['id']}:1")],
-            [InlineKeyboardButton(text="ទិញ 2", callback_data=f"b:{product_data['id']}:2"), InlineKeyboardButton(text="ទិញ 3", callback_data=f"b:{product_data['id']}:3")],
-            back_button("shop"),
+            [
+                InlineKeyboardButton(
+                    text=f"ទិញ {quantity} · {money(Decimal(str(product_data['price'])) * quantity)}",
+                    callback_data=f"b:{product_data['id']}:{quantity}",
+                )
+                for quantity in (2, 3)
+            ],
+            back_button(f"c:{product_data['category_id']}"),
         ]
         description = product_data.get("description") or ""
         await callback.message.edit_text(

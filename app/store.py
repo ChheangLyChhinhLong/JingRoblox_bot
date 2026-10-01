@@ -33,7 +33,7 @@ class Store:
     async def product(self, product_id: str) -> dict[str, Any] | None:
         result = await (
             self.client.table("products")
-            .select("id,name,description,price")
+            .select("id,category_id,name,description,price")
             .eq("id", product_id)
             .eq("active", True)
             .maybe_single()
