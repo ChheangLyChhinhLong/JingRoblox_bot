@@ -225,6 +225,32 @@ def back_button(target: str = "home", language: str = "km") -> list[InlineKeyboa
     ]
 
 
+def admin_category_actions(category_id: str) -> list[list[InlineKeyboardButton]]:
+    return [
+        [InlineKeyboardButton(text="➕ បន្ថែម Package", callback_data=f"admin:product-add:{category_id}")],
+        [
+            InlineKeyboardButton(text="✏️ កែ Catalog", callback_data=f"admin:category-edit:{category_id}"),
+            InlineKeyboardButton(text="🗑 បិទ Catalog", callback_data=f"admin:category-disable:{category_id}"),
+        ],
+        back_button("admin:catalogs"),
+    ]
+
+
+def admin_product_actions(product_id: str, category_id: str) -> list[list[InlineKeyboardButton]]:
+    return [
+        [
+            InlineKeyboardButton(text="✏️ កែ Package", callback_data=f"admin:product-edit:{product_id}"),
+            InlineKeyboardButton(text="🗑 បិទ Package", callback_data=f"admin:product-disable:{product_id}"),
+        ],
+        [
+            InlineKeyboardButton(text="➕ បន្ថែមស្តុក", callback_data=f"admin:stock-add:{product_id}"),
+            InlineKeyboardButton(text="➖ ដកស្តុក", callback_data=f"admin:stock-remove:{product_id}"),
+        ],
+        [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data=f"au:{product_id}")],
+        back_button(f"ac:{category_id}"),
+    ]
+
+
 def payment_keyboard(
     order_id: str,
     deeplink: str,
@@ -741,10 +767,13 @@ def register_handlers(
             await callback.message.edit_text("អ្នកមិនមានសិទ្ធិប្រើប្រាស់ទេ។", reply_markup=keyboard([back_button()]))
             return
         result = await store.client.table("products").select("id,name").eq("active", True).order("sort_order").execute()
-        lines = []
-        for item in result.data:
-            stock = await store.available_stock(item["id"])
-            lines.append(f"• {html.escape(item['name'])}: {stock} នៅសល់")
+        products = result.data or []
+        stock_counts = await asyncio.gather(*(store.available_stock(item["id"]) for item in products))
+        lines = [
+            f"• {html.escape(item['name'])}: {stock} នៅសល់"
+            for item, stock in zip(products, stock_counts)
+        ]
+        total_stock = sum(stock_counts)
         rows = [
             [InlineKeyboardButton(text="🗂 គ្រប់គ្រង Catalog និង Package", callback_data="admin:catalogs")],
             [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data="admin:upload")],
@@ -753,8 +782,8 @@ def register_handlers(
         ]
         await callback.message.edit_text(
             "⚙️ <b>ផ្ទាំងគ្រប់គ្រងហាង</b>\n"
-            "ស្តុកដែលនៅសល់\n"
-            + ("\n".join(lines) or "មិនមានផលិតផលសកម្មទេ។"),
+            f"📦 <b>ស្តុកដែលអាចលក់បាន៖ {total_stock}</b>\n"
+            + ("\n".join(lines) or "មិនមាន Package សកម្មទេ។"),
             parse_mode="HTML",
             reply_markup=keyboard(rows),
         )
@@ -765,9 +794,10 @@ def register_handlers(
         if callback.from_user.id not in settings.admin_ids:
             return
         result = await store.client.table("categories").select("id,name").eq("active", True).order("sort_order").execute()
+        categories = result.data or []
         rows = [
             [InlineKeyboardButton(text=f"🛍 {item['name']}", callback_data=f"ac:{item['id']}")]
-            for item in result.data
+            for item in categories
         ]
         rows.extend(
             [
@@ -776,7 +806,12 @@ def register_handlers(
             ]
         )
         await callback.message.edit_text(
-            "🗂 <b>គ្រប់គ្រង Catalog</b>\nជ្រើសរើស Catalog ដើម្បីកែប្រែ ឬបន្ថែម Package៖",
+            f"🗂 <b>គ្រប់គ្រង Catalog ({len(categories)})</b>\n"
+            + (
+                "ជ្រើសរើស Catalog ដើម្បីមើល Package និងសកម្មភាព៖"
+                if categories
+                else "មិនទាន់មាន Catalog ទេ។ ចុចបន្ថែម Catalog ដើម្បីចាប់ផ្តើម។"
+            ),
             parse_mode="HTML",
             reply_markup=keyboard(rows),
         )
@@ -804,20 +839,26 @@ def register_handlers(
             await callback.message.edit_text("រកមិនឃើញ Catalog ទេ។", reply_markup=keyboard([back_button("admin:catalogs")]))
             return
         result = await store.client.table("products").select("id,name").eq("category_id", category_id).eq("active", True).order("sort_order").execute()
+        products = result.data or []
+        stock_counts = await asyncio.gather(*(store.available_stock(item["id"]) for item in products))
         rows = [
-            [InlineKeyboardButton(text=f"📦 {item['name']}", callback_data=f"ap:{item['id']}")]
-            for item in result.data
-        ]
-        rows.extend(
             [
-                [InlineKeyboardButton(text="➕ បន្ថែម Package", callback_data=f"admin:product-add:{category_id}")],
-                [InlineKeyboardButton(text="✏️ កែ Catalog", callback_data=f"admin:category-edit:{category_id}")],
-                [InlineKeyboardButton(text="🗑 បិទ Catalog", callback_data=f"admin:category-disable:{category_id}")],
-                back_button("admin:catalogs"),
+                InlineKeyboardButton(
+                    text=f"📦 {item['name'][:40]} · {stock} នៅសល់",
+                    callback_data=f"ap:{item['id']}",
+                )
             ]
+            for item, stock in zip(products, stock_counts)
+        ]
+        rows.extend(admin_category_actions(category_id))
+        product_summary = (
+            f"📦 Package សកម្ម៖ {len(products)}"
+            if products
+            else "មិនទាន់មាន Package ទេ។ ចុចបន្ថែម Package ដើម្បីចាប់ផ្តើម។"
         )
         await callback.message.edit_text(
-            f"🗂 <b>{html.escape(category_data['name'])}</b>\n{html.escape(category_data.get('description') or '')}",
+            f"🗂 <b>{html.escape(category_data['name'])}</b>\n"
+            f"{html.escape(category_data.get('description') or '')}\n\n{product_summary}",
             parse_mode="HTML",
             reply_markup=keyboard(rows),
         )
@@ -832,14 +873,7 @@ def register_handlers(
             await callback.message.edit_text("រកមិនឃើញ Package ទេ។", reply_markup=keyboard([back_button("admin:catalogs")]))
             return
         stock = await store.available_stock(product_data["id"])
-        rows = [
-            [InlineKeyboardButton(text="✏️ កែ Package", callback_data=f"admin:product-edit:{product_data['id']}")],
-            [InlineKeyboardButton(text="➕ បន្ថែមស្តុក", callback_data=f"admin:stock-add:{product_data['id']}")],
-            [InlineKeyboardButton(text="➖ ដកស្តុក", callback_data=f"admin:stock-remove:{product_data['id']}")],
-            [InlineKeyboardButton(text="📥 បញ្ចូលស្តុក (.txt)", callback_data=f"au:{product_data['id']}")],
-            [InlineKeyboardButton(text="🗑 បិទ Package", callback_data=f"admin:product-disable:{product_data['id']}")],
-            back_button(f"ac:{product_data['category_id']}"),
-        ]
+        rows = admin_product_actions(product_data["id"], product_data["category_id"])
         await callback.message.edit_text(
             f"📦 <b>{html.escape(product_data['name'])}</b>\n"
             f"ID: <code>{html.escape(product_data['id'])}</code>\n"

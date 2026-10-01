@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from app.bot import (
+    admin_category_actions,
+    admin_product_actions,
     deliver_order,
     description_preview,
     menu,
@@ -101,6 +103,27 @@ def test_menu_uses_dynamic_tutorial_callback_and_groups_language_support():
 
     assert markup.inline_keyboard[2][0].callback_data == "how_to_buy"
     assert [button.callback_data for button in markup.inline_keyboard[3]] == ["language", "support"]
+
+
+def test_admin_category_actions_group_catalog_controls_after_package_creation():
+    rows = admin_category_actions("category-123")
+
+    assert [[button.callback_data for button in row] for row in rows] == [
+        ["admin:product-add:category-123"],
+        ["admin:category-edit:category-123", "admin:category-disable:category-123"],
+        ["admin:catalogs"],
+    ]
+
+
+def test_admin_package_actions_group_editing_and_stock_controls():
+    rows = admin_product_actions("product-123", "category-123")
+
+    assert [[button.callback_data for button in row] for row in rows] == [
+        ["admin:product-edit:product-123", "admin:product-disable:product-123"],
+        ["admin:stock-add:product-123", "admin:stock-remove:product-123"],
+        ["au:product-123"],
+        ["ac:category-123"],
+    ]
 
 
 def test_khqr_payment_keyboard_has_only_aba_and_check_buttons():
