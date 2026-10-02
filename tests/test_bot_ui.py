@@ -520,7 +520,10 @@ def test_user_language_falls_back_to_khmer_when_preferences_are_unavailable():
 
 def test_stock_notification_reaches_users_and_configured_chats_once():
     async def run_test():
-        bot = SimpleNamespace(send_message=AsyncMock())
+        bot = SimpleNamespace(
+            get_me=AsyncMock(return_value=SimpleNamespace(username="JingRobloxBot")),
+            send_message=AsyncMock(),
+        )
         store = SimpleNamespace(
             product=AsyncMock(return_value={"id": "product-123", "name": "Robux"}),
             stock_notification_users=AsyncMock(
@@ -541,7 +544,9 @@ def test_stock_notification_reaches_users_and_configured_chats_once():
         assert "New quantity: 4" in bot.send_message.await_args_list[0].args[1]
         assert "ចំនួនថ្មី៖ 4" in bot.send_message.await_args_list[1].args[1]
         assert "New quantity: 4" in bot.send_message.await_args_list[2].args[1]
-        assert bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "p:product-123"
+        button = bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0]
+        assert button.url == "https://t.me/JingRobloxBot?start=stock_product-123"
+        assert button.callback_data is None
         assert bot.send_message.await_args_list[0].kwargs["reply_markup"].inline_keyboard[0][0].text == "🛍 View product"
         assert bot.send_message.await_args_list[1].kwargs["reply_markup"].inline_keyboard[0][0].text == "🛍 មើល Package"
 

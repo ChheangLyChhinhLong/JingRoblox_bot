@@ -327,8 +327,12 @@ async def notify_stock_added(bot: Bot, store: Store, chat_ids: str, product_id: 
             logger.warning("Skipping stock notification for unavailable product %s", product_id)
             return
         users = await store.stock_notification_users()
+        bot_username = (await bot.get_me()).username
     except Exception:
         logger.exception("Could not prepare stock notification for product %s", product_id)
+        return
+    if not bot_username:
+        logger.warning("Skipping stock notification without a bot username")
         return
 
     destinations: dict[int | str, str | None] = {
@@ -363,7 +367,14 @@ async def notify_stock_added(bot: Bot, store: Store, chat_ids: str, product_id: 
             )
             button_text = "🛍 មើល Package / View product"
         keyboard_markup = keyboard(
-            [[InlineKeyboardButton(text=button_text, callback_data=f"p:{product_id}")]]
+            [
+                [
+                    InlineKeyboardButton(
+                        text=button_text,
+                        url=f"https://t.me/{bot_username.lstrip('@')}?start=stock_{product_id}",
+                    )
+                ]
+            ]
         )
         try:
             await bot.send_message(chat_id, text, reply_markup=keyboard_markup)
@@ -579,6 +590,20 @@ def register_handlers(
 
     @router.message(CommandStart())
     async def start(message: Message) -> None:
+        payload = (message.text or "").partition(" ")[2].strip()
+        if payload.startswith("stock_"):
+            product_data = await store.product(payload.removeprefix("stock_"))
+            if product_data:
+                language = await safe_user_language(store, message.from_user.id)
+                await safe_upsert_user(
+                    store,
+                    message.from_user.id,
+                    message.from_user.username,
+                    message.from_user.first_name,
+                    language,
+                )
+                await show_product(message, product_data, 1, language, edit_message=False)
+                return
         await send_welcome(message, store, settings)
 
     @router.callback_query(F.data == "home")
@@ -710,7 +735,13 @@ def register_handlers(
             return
         await show_product(callback.message, product_data, 1, language)
 
-    async def show_product(message: Message, product_data: dict[str, Any], quantity: int, language: str) -> None:
+    async def show_product(
+        message: Message,
+        product_data: dict[str, Any],
+        quantity: int,
+        language: str,
+        edit_message: bool = True,
+    ) -> None:
         stock = await store.available_stock(product_data["id"])
         max_quantity = quantity_limit(stock)
         quantity = min(max(quantity, 1), max_quantity) if max_quantity else 0
@@ -761,7 +792,7 @@ def register_handlers(
         markup = keyboard(rows)
         image_url = product_data.get("image_url")
         if image_url:
-            if message.photo:
+            if edit_message and message.photo:
                 await message.edit_media(
                     media=InputMediaPhoto(media=image_url, caption=text, parse_mode="HTML"),
                     reply_markup=markup,
@@ -773,12 +804,15 @@ def register_handlers(
                     parse_mode="HTML",
                     reply_markup=markup,
                 )
-                try:
-                    await message.delete()
-                except TelegramBadRequest:
-                    logger.debug("Could not delete previous product message %s", message.message_id)
-        elif message.photo:
+                if edit_message:
+                    try:
+                        await message.delete()
+                    except TelegramBadRequest:
+                        logger.debug("Could not delete previous product message %s", message.message_id)
+        elif edit_message and message.photo:
             await message.edit_caption(caption=text, parse_mode="HTML", reply_markup=markup)
+        elif not edit_message:
+            await message.answer(text, parse_mode="HTML", reply_markup=markup)
         else:
             await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
