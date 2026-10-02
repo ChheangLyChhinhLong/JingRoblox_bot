@@ -100,8 +100,17 @@ def payment_caption(product_name: str, quantity: int, amount: Any, transaction_r
     )
 
 
-def copy(language: str, khmer: str, english: str) -> str:
-    return english if language == "en" else khmer
+def normalize_language(language: str | None) -> str:
+    code = (language or "km").strip().lower()
+    if code in {"km", "km-kh", "kh", "khmer"}:
+        return "km"
+    if code.startswith("en"):
+        return "en"
+    return "km"
+
+
+def copy(language: str | None, khmer: str, english: str) -> str:
+    return english if normalize_language(language) == "en" else khmer
 
 
 def welcome_text(user: Any, language: str = "km", categories: list[dict[str, Any]] | None = None) -> str:
@@ -305,7 +314,7 @@ def payment_keyboard(
 
 async def safe_user_language(store: Store, telegram_id: int) -> str:
     try:
-        return await store.user_language(telegram_id) or "km"
+        return normalize_language(await store.user_language(telegram_id))
     except Exception:
         logger.exception("Could not load language preference for Telegram user %s", telegram_id)
         return "km"
@@ -635,22 +644,21 @@ def register_handlers(
 
     @router.callback_query(F.data.startswith("lang:"))
     async def set_language(callback: CallbackQuery) -> None:
-        language = callback.data[5:]
+        language = normalize_language(callback.data[5:])
         if language not in {"km", "en"}:
             await callback.answer("Unsupported language", show_alert=True)
             return
-        language_before_update = await safe_user_language(store, callback.from_user.id)
+        try:
+            await store.set_user_language(callback.from_user.id, language)
+        except Exception:
+            logger.exception("Could not save language preference for Telegram user %s", callback.from_user.id)
         await safe_upsert_user(
             store,
             callback.from_user.id,
             callback.from_user.username,
             callback.from_user.first_name,
-            language_before_update,
+            language,
         )
-        try:
-            await store.set_user_language(callback.from_user.id, language)
-        except Exception:
-            logger.exception("Could not save language preference for Telegram user %s", callback.from_user.id)
         await callback.answer()
         categories = await store.categories()
         await callback.message.edit_text(

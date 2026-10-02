@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock, Mock
 from app.bot import (
     admin_category_actions,
     admin_product_actions,
+    copy,
     delete_replaced_message,
     deliver_order,
     description_preview,
     edit_text_message,
     expire_payment,
     menu,
+    normalize_language,
     notify_stock_added,
     paginate,
     pagination_row,
@@ -49,6 +51,21 @@ def test_english_welcome_shows_account_details():
     assert "Welcome, Jing" in text
     assert "<code>12345</code>" in text
     assert "@jing" in text
+
+
+def test_language_helpers_normalize_supported_locale_variants():
+    assert normalize_language("en-US") == "en"
+    assert normalize_language("km-KH") == "km"
+    assert normalize_language("fr") == "km"
+    assert copy("en-US", "សូមស្វាគមន៍", "Welcome") == "Welcome"
+    assert copy("km-KH", "សូមស្វាគមន៍", "Welcome") == "សូមស្វាគមន៍"
+
+    async def run_test():
+        store = SimpleNamespace(user_language=AsyncMock(return_value="en-US"))
+
+        assert await safe_user_language(store, 42) == "en"
+
+    asyncio.run(run_test())
 
 
 def test_start_welcome_sends_menu_and_saves_profile():
